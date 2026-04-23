@@ -1,4 +1,4 @@
--- PulseDeck Supabase schema (paste into Supabase SQL Editor and run).
+-- Whiteout Supabase schema (paste into Supabase SQL Editor and run).
 -- This enables DJ auth via Supabase Auth, party creation, DJ claiming/heartbeat,
 -- and guest song requests via RPC (no direct table access for guests).
 

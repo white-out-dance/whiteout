@@ -1,10 +1,21 @@
 const partyCodeInput = document.getElementById('partyCode');
 const djKeyInput = document.getElementById('djKey');
+const partyNameCreateInput = document.getElementById('partyNameCreate');
 
-const saveBtn = document.getElementById('saveBtn');
+const createPartyAppBtn = document.getElementById('createPartyAppBtn');
 const connectBtn = document.getElementById('connectBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const showQrBtn = document.getElementById('showQrBtn');
+const appLogoutBtn = document.getElementById('appLogoutBtn');
+
+const authGate = document.getElementById('authGate');
+const appLayout = document.getElementById('appLayout');
+const authGateForm = document.getElementById('authGateForm');
+const authGateEmailInput = document.getElementById('authGateEmail');
+const authGatePasswordInput = document.getElementById('authGatePassword');
+const authGateRegisterBtn = document.getElementById('authGateRegisterBtn');
+const authGateLoginBtn = document.getElementById('authGateLoginBtn');
+const authGateStatus = document.getElementById('authGateStatus');
 
 const copyPartyCodeBtn = document.getElementById('copyPartyCodeBtn');
 const copyGuestUrlBtn = document.getElementById('copyGuestUrlBtn');
@@ -171,6 +182,23 @@ function setStatus(status, detail) {
   }
 
   statusText.textContent = detail || 'Ready.';
+}
+
+function setAuthGateStatus(message, isError = false) {
+  if (!authGateStatus) return;
+  authGateStatus.textContent = message || '';
+  authGateStatus.style.color = isError ? '#ad2945' : '#3f4960';
+}
+
+function setAppLocked(locked, email = '') {
+  if (authGate) authGate.classList.toggle('hidden', !locked);
+  if (appLayout) appLayout.classList.toggle('hidden', locked);
+
+  if (locked) {
+    setStatus('idle', 'Login required.');
+  } else {
+    setStatus('idle', email ? `Signed in as ${email}` : 'Ready. Create a party and connect.');
+  }
 }
 
 function appendLog(level, message, at) {
@@ -1005,8 +1033,8 @@ function drawRoundRect(ctx, x, y, w, h, r) {
 }
 
 function presetSpec(preset) {
-  if (preset === 'ipad') return { key: 'ipad', w: 2732, h: 2048, label: 'iPad Landscape' };
-  return { key: 'iphone', w: 2532, h: 1170, label: 'iPhone Landscape' };
+  if (preset === 'ipad') return { key: 'ipad', w: 2732, h: 2048, label: 'iPad Landscape (2732x2048)' };
+  return { key: 'iphone', w: 2796, h: 1290, label: 'iPhone Landscape (2796x1290)' };
 }
 
 async function buildQrPosterPng(payload, preset) {
@@ -1017,80 +1045,120 @@ async function buildQrPosterPng(payload, preset) {
   if (!qrDataUrl) throw new Error('QR not generated yet.');
 
   const canvas = document.createElement('canvas');
-  canvas.width = spec.w;
-  canvas.height = spec.h;
+  // Hard force landscape output dimensions for device presets.
+  const canvasWidth = Math.max(spec.w, spec.h);
+  const canvasHeight = Math.min(spec.w, spec.h);
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas unavailable');
 
-  const bg = ctx.createLinearGradient(0, 0, spec.w, spec.h);
-  bg.addColorStop(0, '#070A12');
-  bg.addColorStop(0.6, '#121B34');
-  bg.addColorStop(1, '#15102A');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, spec.w, spec.h);
+  ctx.fillStyle = '#070707';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Soft glow blobs.
-  ctx.globalAlpha = 0.95;
-  ctx.fillStyle = 'rgba(0, 187, 248, 0.22)';
-  ctx.beginPath();
-  ctx.ellipse(spec.w * 0.22, spec.h * 0.22, spec.w * 0.34, spec.w * 0.34, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255, 95, 64, 0.18)';
-  ctx.beginPath();
-  ctx.ellipse(spec.w * 0.78, spec.h * 0.18, spec.w * 0.42, spec.w * 0.42, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(143, 70, 255, 0.16)';
-  ctx.beginPath();
-  ctx.ellipse(spec.w * 0.7, spec.h * 0.88, spec.w * 0.56, spec.w * 0.56, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  // Grain + slashed poster background.
+  ctx.save();
+  ctx.translate(canvasWidth * 0.04, canvasHeight * 0.1);
+  ctx.rotate(-0.18);
+  ctx.fillStyle = 'rgba(255,255,255,0.11)';
+  for (let i = -1; i < 6; i += 1) {
+    ctx.fillRect(-canvasWidth * 0.2, i * canvasHeight * 0.18, canvasWidth * 1.5, Math.max(18, canvasHeight * 0.03));
+  }
+  ctx.restore();
 
-  // Frosted landscape card.
-  const pad = Math.round(spec.w * 0.055);
+  for (let i = 0; i < 340; i += 1) {
+    const x = Math.random() * canvasWidth;
+    const yDot = Math.random() * canvasHeight;
+    const size = 1 + Math.random() * 4;
+    ctx.fillStyle = `rgba(255,255,255,${0.02 + Math.random() * 0.12})`;
+    ctx.fillRect(x, yDot, size, size);
+  }
+
+  const pad = Math.round(canvasWidth * 0.055);
   const cardX = pad;
-  const cardW = spec.w - pad * 2;
-  const cardY = Math.round(spec.h * 0.11);
-  const cardH = Math.round(spec.h * 0.78);
+  const cardW = canvasWidth - pad * 2;
+  const cardY = Math.round(canvasHeight * 0.11);
+  const cardH = Math.round(canvasHeight * 0.78);
   drawRoundRect(ctx, cardX, cardY, cardW, cardH, 52);
-  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.fillStyle = '#f3efe8';
   ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+  ctx.stroke();
+  drawRoundRect(ctx, cardX + 18, cardY + 18, cardW - 36, cardH - 36, 40);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(8, 8, 8, 0.11)';
   ctx.stroke();
 
   const leftX = cardX + Math.round(cardW * 0.07);
-  const leftW = Math.round(cardW * 0.58);
-  let y = cardY + Math.round(cardH * 0.22);
+  const leftW = Math.round(cardW * 0.5);
+  let y = cardY + Math.round(cardH * 0.19);
 
-  ctx.fillStyle = 'rgba(255,255,255,0.84)';
-  ctx.font = `700 ${Math.round(cardH * 0.12)}px "Space Grotesk", system-ui, -apple-system`;
-  ctx.fillText('PulseDeck', leftX, y, leftW);
+  ctx.fillStyle = '#0c0c0c';
+  ctx.font = `700 ${Math.round(cardH * 0.065)}px "League Spartan", system-ui, -apple-system`;
+  ctx.fillText('WHITE-OUT DANCE', leftX, y, leftW);
 
-  y += Math.round(cardH * 0.23);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${Math.round(cardH * 0.28)}px "Bebas Neue", Impact, system-ui`;
+  y += Math.round(cardH * 0.18);
+  ctx.font = `400 ${Math.round(cardH * 0.19)}px "Lilita One", system-ui, -apple-system`;
+  ctx.fillText('Whiteout', leftX, y, leftW);
+
+  y += Math.round(cardH * 0.17);
+  ctx.font = `800 ${Math.round(cardH * 0.27)}px "League Spartan", Impact, system-ui`;
   ctx.fillText(partyCode, leftX, y, leftW);
 
-  y += Math.round(cardH * 0.14);
-  ctx.fillStyle = 'rgba(255,255,255,0.78)';
-  ctx.font = `600 ${Math.round(cardH * 0.09)}px "Space Grotesk", system-ui, -apple-system`;
-  ctx.fillText('Scan to request a song', leftX, y, leftW);
+  y += Math.round(cardH * 0.11);
+  ctx.font = `800 ${Math.round(cardH * 0.082)}px "League Spartan", system-ui, -apple-system`;
+  ctx.fillText('SCAN TO REQUEST', leftX, y, leftW);
+
+  y += Math.round(cardH * 0.105);
+  ctx.fillStyle = '#3f3b35';
+  ctx.font = `600 ${Math.round(cardH * 0.062)}px "Space Grotesk", system-ui, -apple-system`;
+  ctx.fillText('ALL WHITE. ALL NIGHT. LIVE QUEUE.', leftX, y, leftW);
 
   const qrImg = await loadImageFromDataUrl(qrDataUrl);
-  const qrSize = Math.round(Math.min(cardH * 0.68, cardW * 0.30));
-  const qrX = Math.round(cardX + cardW * 0.68);
+  const qrSize = Math.round(Math.min(cardH * 0.66, cardW * 0.29));
+  const qrX = Math.round(cardX + cardW * 0.69);
   const qrY = Math.round(cardY + (cardH - qrSize) / 2);
-  drawRoundRect(ctx, qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 30);
+  drawRoundRect(ctx, qrX - 28, qrY - 28, qrSize + 56, qrSize + 56, 36);
   ctx.fillStyle = '#ffffff';
   ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#0c0c0c';
+  ctx.stroke();
   ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
+  const dividerX = Math.round(cardX + cardW * 0.61);
+  ctx.beginPath();
+  ctx.moveTo(dividerX, cardY + Math.round(cardH * 0.12));
+  ctx.lineTo(dividerX, cardY + Math.round(cardH * 0.88));
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(12,12,12,0.12)';
+  ctx.stroke();
+
+  const barcodeX = leftX;
+  const barcodeY = cardY + cardH - Math.round(cardH * 0.16);
+  const barcodeW = Math.round(leftW * 0.62);
+  const barcodeH = Math.round(cardH * 0.11);
+  ctx.fillStyle = '#0c0c0c';
+  ctx.fillRect(barcodeX, barcodeY, barcodeW, barcodeH);
+  let barCursor = barcodeX + 10;
+  const barBottom = barcodeY + 10;
+  const barHeight = barcodeH - 20;
+  for (let i = 0; i < partyCode.length * 8; i += 1) {
+    const seed = partyCode.charCodeAt(i % partyCode.length);
+    const barWidth = 2 + ((seed + i) % 5);
+    ctx.fillStyle = i % 3 === 0 ? '#0c0c0c' : '#f3efe8';
+    ctx.fillRect(barCursor, barBottom, barWidth, barHeight);
+    barCursor += barWidth + 1;
+    if (barCursor > barcodeX + barcodeW - 12) break;
+  }
+
   if (guestUrl) {
-    const maxChars = spec.w >= 2500 ? 74 : 60;
+    const maxChars = canvasWidth >= 2500 ? 78 : 62;
     const urlDisplay = guestUrl.length > maxChars ? `${guestUrl.slice(0, maxChars - 1)}…` : guestUrl;
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.font = `500 ${Math.round(cardH * 0.06)}px "Space Grotesk", system-ui, -apple-system`;
-    ctx.fillText(urlDisplay, leftX, cardY + cardH - Math.round(cardH * 0.08), leftW);
+    ctx.fillStyle = '#3f3b35';
+    ctx.font = `500 ${Math.round(cardH * 0.05)}px "Space Grotesk", system-ui, -apple-system`;
+    ctx.fillText(urlDisplay, leftX, cardY + cardH - Math.round(cardH * 0.06), leftW);
   }
 
   return canvas.toDataURL('image/png');
@@ -1203,6 +1271,50 @@ async function copyGuestUrl() {
   }
 }
 
+async function refreshAuthGate() {
+  try {
+    const status = await window.djApi.authStatus();
+    const authenticated = Boolean(status?.authenticated);
+    if (!authenticated) {
+      setAppLocked(true);
+      setAuthGateStatus('Log in to continue.');
+      return false;
+    }
+    setAppLocked(false, String(status?.email || '').trim());
+    setAuthGateStatus(`Signed in as ${String(status?.email || '').trim()}`);
+    return true;
+  } catch {
+    setAppLocked(true);
+    setAuthGateStatus('Could not verify login. Please log in again.', true);
+    return false;
+  }
+}
+
+async function createPartyInApp() {
+  const partyName = String(partyNameCreateInput?.value || '').trim();
+  if (!partyName) {
+    appendLog('error', 'Enter a party name before creating a party.', new Date().toISOString());
+    return;
+  }
+
+  setButtonBusy(createPartyAppBtn, true, 'Creating...', 'Create Party');
+  try {
+    const result = await window.djApi.createParty({ partyName });
+    partyCodeInput.value = normalizePartyCode(result?.code || '');
+    djKeyInput.value = String(result?.djKey || '').trim();
+    appendLog('success', `Party created: ${partyCodeInput.value} (${partyName})`, new Date().toISOString());
+    setStatus('idle', `Party ${partyCodeInput.value} ready. Connect to start receiving requests.`);
+    const payload = await refreshShare();
+    if (payload) {
+      appendLog('info', 'Guest link and QR refreshed.', new Date().toISOString());
+    }
+  } catch (error) {
+    appendLog('error', error.message || 'Failed to create party.', new Date().toISOString());
+  } finally {
+    setButtonBusy(createPartyAppBtn, false, 'Creating...', 'Create Party');
+  }
+}
+
 async function initialize() {
   clearQueue();
   setStatus('idle', 'Loading settings...');
@@ -1212,7 +1324,8 @@ async function initialize() {
 
   const config = await window.djApi.loadConfig();
   writeFormConfig(config);
-  setStatus('idle', 'Ready. Configure values and connect.');
+  setStatus('idle', 'Checking login...');
+  await refreshAuthGate();
 
   unsubscribe = window.djApi.onEvent((event) => {
     if (!event || typeof event !== 'object') return;
@@ -1308,17 +1421,15 @@ partyCodeInput.addEventListener('input', () => {
   }
 });
 
-saveBtn.addEventListener('click', async () => {
-  try {
-    const config = await window.djApi.saveConfig(readFormConfig());
-    writeFormConfig(config);
-    appendLog('success', 'Settings saved.', new Date().toISOString());
-  } catch (error) {
-    appendLog('error', error.message || 'Failed to save settings.', new Date().toISOString());
-  }
-});
+if (createPartyAppBtn) {
+  createPartyAppBtn.addEventListener('click', async () => {
+    await createPartyInApp();
+  });
+}
 
 connectBtn.addEventListener('click', async () => {
+  const authed = await refreshAuthGate();
+  if (!authed) return;
   connectBtn.disabled = true;
   try {
     setStatus('connecting', 'Connecting to party...');
@@ -1333,6 +1444,66 @@ connectBtn.addEventListener('click', async () => {
     connectBtn.disabled = false;
   }
 });
+
+if (authGateForm) {
+  authGateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const email = String(authGateEmailInput?.value || '').trim().toLowerCase();
+    const password = String(authGatePasswordInput?.value || '');
+    if (!email || !password) {
+      setAuthGateStatus('Enter email and password.', true);
+      return;
+    }
+
+    setButtonBusy(authGateLoginBtn, true, 'Logging in...', 'Login');
+    try {
+      await window.djApi.authLogin({ email, password });
+      setAuthGateStatus('Login successful.');
+      authGatePasswordInput.value = '';
+      await refreshAuthGate();
+    } catch (error) {
+      setAuthGateStatus(error.message || 'Login failed.', true);
+    } finally {
+      setButtonBusy(authGateLoginBtn, false, 'Logging in...', 'Login');
+    }
+  });
+}
+
+if (authGateRegisterBtn) {
+  authGateRegisterBtn.addEventListener('click', async () => {
+    const email = String(authGateEmailInput?.value || '').trim().toLowerCase();
+    const password = String(authGatePasswordInput?.value || '');
+    if (!email || !password) {
+      setAuthGateStatus('Enter email and password.', true);
+      return;
+    }
+
+    setButtonBusy(authGateRegisterBtn, true, 'Registering...', 'Register');
+    try {
+      await window.djApi.authRegister({ email, password });
+      setAuthGateStatus('Registered and logged in.');
+      authGatePasswordInput.value = '';
+      await refreshAuthGate();
+    } catch (error) {
+      setAuthGateStatus(error.message || 'Register failed.', true);
+    } finally {
+      setButtonBusy(authGateRegisterBtn, false, 'Registering...', 'Register');
+    }
+  });
+}
+
+if (appLogoutBtn) {
+  appLogoutBtn.addEventListener('click', async () => {
+    try {
+      await window.djApi.authLogout();
+      await window.djApi.disconnect();
+    } catch {
+      // ignore
+    }
+    setAppLocked(true);
+    setAuthGateStatus('Logged out.');
+  });
+}
 
 disconnectBtn.addEventListener('click', async () => {
   try {
@@ -1407,7 +1578,7 @@ if (qrDownloadBtn) {
     try {
       setButtonBusy(qrDownloadBtn, true, 'Building...', 'Download PNG');
       const dataUrl = await buildQrPosterPng(payload, qrExportPreset);
-      const suggestedName = `PulseDeck-${payload.partyCode}-${qrExportPreset}`;
+      const suggestedName = `Whiteout-${payload.partyCode}-${qrExportPreset}`;
       const result = await window.djApi.savePng({ dataUrl, suggestedName });
       if (!result?.canceled) {
         appendLog('success', `QR poster saved (${qrExportPreset}).`, new Date().toISOString());

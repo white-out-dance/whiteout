@@ -31,7 +31,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pulsedeck-dj-dmg
+          name: whiteout-dmg
           path: apps/dj-app/dist/*.dmg
           if-no-files-found: error
 

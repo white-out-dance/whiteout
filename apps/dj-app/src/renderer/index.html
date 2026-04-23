@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PulseDeck DJ</title>
+    <title>Whiteout Booth</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@500;600;700;800;900&family=Lilita+One&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
@@ -16,19 +16,67 @@
     <div class="bg-orb bg-orb-a"></div>
     <div class="bg-orb bg-orb-b"></div>
 
-    <main class="layout">
+    <section id="authGate" class="auth-gate">
+      <article class="auth-card">
+        <div class="auth-copy">
+          <p class="eyebrow">white-out dance presents</p>
+          <h1 class="hero-title">
+            <span class="wordmark">Whiteout</span>
+            <span class="hero-title-sub">Booth access</span>
+          </h1>
+          <p class="subtitle">Log in, launch the room, and post the QR before doors open.</p>
+
+          <form id="authGateForm" class="form-grid">
+            <label for="authGateEmail">Email</label>
+            <input id="authGateEmail" type="email" autocomplete="email" required />
+
+            <label for="authGatePassword">Password</label>
+            <input id="authGatePassword" type="password" minlength="10" autocomplete="current-password" required />
+
+            <div class="button-row auth-buttons">
+              <button id="authGateRegisterBtn" class="btn btn-ghost" type="button">Register</button>
+              <button id="authGateLoginBtn" class="btn btn-primary" type="submit">Login</button>
+            </div>
+          </form>
+
+          <p id="authGateStatus" class="status-text">Not logged in.</p>
+        </div>
+
+        <aside class="auth-scene" aria-hidden="true">
+          <figure class="scene-poster">
+            <img src="assets/poster-helmet.jpg" alt="Whiteout poster" />
+          </figure>
+          <figure class="scene-poster scene-poster-secondary">
+            <img src="assets/poster-invite.jpg" alt="Whiteout invite instructions" />
+          </figure>
+        </aside>
+      </article>
+    </section>
+
+    <main id="appLayout" class="layout hidden">
       <header class="hero">
-        <p class="eyebrow">PulseDeck DJ Desktop</p>
-        <h1>Official DJ Control</h1>
-        <p class="subtitle">Connect your booth, watch the queue in realtime, and share your party with one QR.</p>
-        <p id="statusText" class="status-text">Not connected.</p>
+        <div class="hero-copy">
+          <p class="eyebrow">white-out dance booth</p>
+          <h1 class="hero-title">
+            <span class="wordmark">Whiteout</span>
+            <span class="hero-title-sub">Booth control</span>
+          </h1>
+          <p class="subtitle">Claim the room, watch requests land in realtime, and throw the QR on screen in one move.</p>
+          <p id="statusText" class="status-text">Not connected.</p>
+        </div>
+
+        <div class="hero-scene" aria-hidden="true">
+          <figure class="hero-scene-card">
+            <img src="assets/poster-invite.jpg" alt="Whiteout poster artwork" />
+          </figure>
+        </div>
       </header>
 
       <nav class="window-tabs" aria-label="DJ windows">
-        <button id="tabBoothBtn" class="window-tab is-active" type="button">DJ Booth</button>
+        <button id="tabBoothBtn" class="window-tab is-active" type="button">Booth</button>
         <button id="tabStageBtn" class="window-tab" type="button">Stage</button>
         <button id="tabRequestsBtn" class="window-tab" type="button">
-          Requests
+          Queue
           <span id="requestCountTab" class="tab-count">0</span>
         </button>
         <button id="tabPlayedBtn" class="window-tab" type="button">
@@ -41,12 +89,15 @@
       <section id="boothWindow" class="window-panel">
         <article class="panel panel-form">
           <div class="panel-head">
-            <h2>Connection</h2>
+            <h2>Room Control</h2>
             <span id="statusPill" class="status-pill status-idle">Idle</span>
           </div>
 
           <div class="form-grid">
-            <label for="partyCode">Party Code</label>
+            <label for="partyNameCreate">Room Name</label>
+            <input id="partyNameCreate" maxlength="80" placeholder="Whiteout Main Floor" />
+
+            <label for="partyCode">Room Code</label>
             <input id="partyCode" maxlength="6" />
 
             <label for="djKey">DJ Key</label>
@@ -54,7 +105,7 @@
           </div>
 
           <div class="button-row">
-            <button id="saveBtn" class="btn btn-ghost">Save Settings</button>
+            <button id="createPartyAppBtn" class="btn btn-accent">Create Room</button>
             <button id="connectBtn" class="btn btn-primary">Connect</button>
             <button id="disconnectBtn" class="btn btn-secondary">Disconnect</button>
             <button id="showQrBtn" class="btn btn-accent">Show Guest QR</button>
@@ -66,11 +117,12 @@
             <h2>Quick Tools</h2>
           </div>
           <div class="button-row button-row-tools">
-            <button id="copyPartyCodeBtn" class="btn btn-ghost">Copy Party Code</button>
+            <button id="copyPartyCodeBtn" class="btn btn-ghost">Copy Room Code</button>
             <button id="copyGuestUrlBtn" class="btn btn-ghost">Copy Guest URL</button>
-            <button id="jumpRequestsBtn" class="btn btn-primary">Open Requests</button>
+            <button id="jumpRequestsBtn" class="btn btn-primary">Open Queue</button>
+            <button id="appLogoutBtn" class="btn btn-ghost">Logout</button>
           </div>
-          <p class="hint">Use these during the party to share code quickly and jump to the live queue.</p>
+          <p class="hint">Use these during the night to share the code quickly and jump to the live queue.</p>
         </article>
       </section>
 
@@ -110,7 +162,7 @@
         <section class="grid-two">
           <article class="panel stage-panel">
             <div class="panel-head">
-              <h2>Next Up</h2>
+              <h2>Now Loading</h2>
               <div class="panel-head-actions">
                 <button id="stageSetupBtn" class="btn btn-ghost btn-mini" type="button">Setup</button>
                 <button id="stageOverlayBtn" class="btn btn-ghost btn-mini" type="button">Overlay</button>
@@ -135,7 +187,7 @@
               <button id="stageCopyBtn" class="btn btn-ghost" type="button">Copy</button>
             </div>
 
-            <p class="hint">Stage view always shows the top of your current queue.</p>
+            <p class="hint">Stage view always shows the next track at the top of your current queue.</p>
           </article>
 
           <article class="panel">
@@ -173,13 +225,13 @@
         <section class="grid-two">
           <article class="panel">
             <div class="panel-head">
-              <h2>Share To Guests</h2>
+              <h2>Guest Pass</h2>
               <span class="count-pill">Live</span>
             </div>
 
             <div class="share-grid">
               <div class="share-block">
-                <p class="share-label">Party Code</p>
+                <p class="share-label">Room Code</p>
                 <p id="sharePartyCode" class="share-code">------</p>
               </div>
 
@@ -197,7 +249,7 @@
             </div>
 
             <p class="hint">
-              Guests should open the request website, enter the party code, and pick a song. Keep DJ key private.
+              Guests should open the request site, enter the room code, and pick a song. Keep the DJ key private.
             </p>
           </article>
 
@@ -221,15 +273,15 @@
         <div class="qr-light qr-light-b"></div>
         <section class="qr-card" role="dialog" aria-modal="true" aria-label="Guest QR code">
           <button id="qrCloseBtn" class="btn btn-ghost qr-close">Close</button>
-          <p class="eyebrow">Guest Join Portal</p>
+          <p class="eyebrow">Whiteout Guest Pass</p>
           <h2 id="qrPartyCode" class="qr-party-code">------</h2>
-          <p class="qr-subtitle">Scan this QR to open the request page with the party code already filled in.</p>
+          <p class="qr-subtitle">Scan this QR to open the request page with the room code already filled in.</p>
           <img id="qrImage" class="qr-image" alt="Guest QR code" />
           <p id="qrUrl" class="qr-url"></p>
           <div class="qr-export">
             <div class="qr-presets" role="group" aria-label="Export size">
-              <button id="qrPresetIphoneBtn" class="seg-btn is-active" type="button">iPhone</button>
-              <button id="qrPresetIpadBtn" class="seg-btn" type="button">iPad</button>
+              <button id="qrPresetIphoneBtn" class="seg-btn is-active" type="button">Phone Landscape</button>
+              <button id="qrPresetIpadBtn" class="seg-btn" type="button">Tablet Landscape</button>
             </div>
             <button id="qrDownloadBtn" class="btn btn-primary" type="button">Download PNG</button>
           </div>
@@ -243,15 +295,15 @@
         <div class="qr-light qr-light-b"></div>
         <section class="qr-card" role="dialog" aria-modal="true" aria-label="Playback setup">
           <button id="setupCloseBtn" class="btn btn-ghost qr-close">Close</button>
-          <p class="eyebrow">Playback Setup</p>
+          <p class="eyebrow">Whiteout Setup</p>
           <h2 class="qr-party-code" style="font-size: 44px; letter-spacing: 0.04em">Play Requests</h2>
           <p class="qr-subtitle">
-            PulseDeck manages the queue and links. It does not download Apple Music tracks or use Apple Music account cookies.
+            Whiteout manages the queue and links. It does not download Apple Music tracks or use Apple Music account cookies.
           </p>
 
           <div style="text-align: left; margin-top: 12px">
             <ol class="hint" style="margin: 0; padding-left: 18px">
-              <li>Connect PulseDeck DJ to your party.</li>
+              <li>Connect Whiteout to your room.</li>
               <li>In Stage or Overlay, click <strong>Open Link</strong> for the next request.</li>
               <li>Play it in Apple Music or your DJ software (if supported).</li>
               <li>Tap <strong>Played</strong> or <strong>Skip</strong> to keep the list clean.</li>
@@ -272,10 +324,10 @@
         <div class="qr-light qr-light-b"></div>
         <section class="qr-card" role="dialog" aria-modal="true" aria-label="Download helper">
           <button id="downloadCloseBtn" class="btn btn-ghost qr-close">Close</button>
-          <p class="eyebrow">Terminal Helper</p>
+          <p class="eyebrow">Whiteout Helper</p>
           <h2 class="qr-party-code" style="font-size: 44px; letter-spacing: 0.04em">Copy Command</h2>
           <p class="qr-subtitle">
-            PulseDeck will never run download commands. This page only helps you copy the correct command for your terminal.
+            Whiteout will never run download commands. This page only helps you copy the correct command for your terminal.
           </p>
 
           <div id="downloadStepChecklist" class="download-step">

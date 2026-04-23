@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PulseDeck Guest Requests</title>
-    <meta name="theme-color" content="#00b9ff" />
+    <title>Whiteout | Request A Track</title>
+    <meta name="theme-color" content="#070707" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@500;600;700;800;900&family=Lilita+One&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
@@ -19,68 +19,93 @@
     <div class="shape shape-b" aria-hidden="true"></div>
     <div class="shape shape-c" aria-hidden="true"></div>
 
-    <main class="shell">
-      <header class="hero reveal">
-        <p class="eyebrow">PulseDeck Guest Portal</p>
-        <h1>Request A Song</h1>
-        <p class="subtitle">Enter the party code shown on the DJ screen.</p>
+    <main class="shell guest-shell">
+      <header class="hero reveal guest-hero">
+        <div class="hero-copy">
+          <p class="eyebrow">white-out dance live</p>
+          <p class="event-line">All white. All night.</p>
+          <h1 class="hero-title">
+            <span class="wordmark">Whiteout</span>
+            <span class="hero-title-sub">Request a track</span>
+          </h1>
+          <p class="subtitle">Enter the code from the booth, pick the song, and send it straight to the live queue.</p>
+        </div>
+
+        <div class="poster-stack poster-stack-guest" aria-hidden="true">
+          <figure class="poster-card poster-card-main">
+            <img src="assets/poster-cash-open.jpg" alt="Whiteout poster" />
+          </figure>
+          <figure class="poster-card poster-card-top">
+            <img src="assets/poster-invite.jpg" alt="Whiteout invite" />
+          </figure>
+        </div>
       </header>
 
       <section class="window-panel reveal delay-1">
-        <article class="panel" id="joinPanel">
+        <article class="panel panel-priority" id="joinPanel">
           <div class="panel-head">
-            <h2>Party Code</h2>
-            <span class="chip">Guest</span>
+            <h2>Enter Room Code</h2>
+            <span class="chip">Guest Pass</span>
           </div>
 
           <form id="joinForm" class="form-grid">
             <label for="partyCode">Code</label>
             <input id="partyCode" maxlength="6" autocomplete="off" placeholder="ABC123" required />
-            <button type="submit" class="btn btn-secondary">Join</button>
+            <button type="submit" class="btn btn-primary">Join Whiteout</button>
           </form>
 
-          <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for code.</p>
+          <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for a code.</p>
           <button id="stopCheckingBtn" class="btn btn-ghost btn-mini hidden" type="button">Stop Checking</button>
         </article>
 
         <article class="panel hidden" id="requestPanel">
           <div class="panel-head">
-            <h2>Song Request</h2>
-            <span class="chip">Live</span>
+            <h2>Send The Song</h2>
+            <span class="chip">Live Queue</span>
           </div>
-          <p id="guestPartyName" class="micro-note" style="margin-top: -6px; margin-bottom: 10px"></p>
+          <p id="guestPartyName" class="micro-note guest-party-name"></p>
 
           <form id="requestForm" class="form-grid">
             <div id="appleSearchSection" class="apple-search">
-              <label for="appleSearchTerm">Search Music</label>
+              <label for="appleSearchTerm">Search Apple Music</label>
               <div class="search-row">
-                <input id="appleSearchTerm" maxlength="120" placeholder="Type a song or artist" />
+                <input id="appleSearchTerm" maxlength="120" placeholder="Song, artist, or remix" />
+                <button id="appleSearchBtn" class="btn btn-secondary" type="button">Search</button>
               </div>
-              <p id="appleSearchStatus" class="status status-neutral">Search to autofill song info.</p>
+              <p id="appleSearchStatus" class="status status-neutral">Search to autofill the request.</p>
               <div id="appleSearchResults" class="search-results"></div>
             </div>
 
             <div id="pickedSongPanel" class="picked-song hidden" aria-live="polite">
-              <p class="mini-label">Selected song</p>
+              <p class="mini-label">Selected track</p>
               <p id="pickedSongTitle" class="picked-title">None</p>
               <p id="pickedSongArtist" class="picked-artist"></p>
               <div class="picked-actions">
                 <button id="pickedChangeBtn" class="btn btn-ghost" type="button">Change</button>
-                <button id="pickedSubmitBtn" class="btn btn-primary" type="button">Submit Request</button>
+                <button id="pickedSubmitBtn" class="btn btn-primary" type="button">Send Request</button>
               </div>
             </div>
 
             <input id="title" type="hidden" maxlength="120" required />
             <input id="artist" type="hidden" maxlength="120" required />
-
-            <!-- Submit lives in the Selected Song card to avoid duplicate buttons. -->
           </form>
 
           <p id="requestResult" class="status status-neutral" aria-live="polite">No request submitted yet.</p>
         </article>
       </section>
 
-      <p class="micro-note reveal delay-2">PulseDeck requests are delivered securely to the DJ queue in realtime.</p>
+      <section class="poster-showcase reveal delay-2" aria-label="Whiteout scene">
+        <figure class="poster-showcase-card">
+          <img src="assets/poster-helmet.jpg" alt="Whiteout helmet poster" />
+        </figure>
+        <figure class="poster-showcase-card">
+          <img src="assets/poster-invite.jpg" alt="Whiteout invite poster" />
+        </figure>
+      </section>
+
+      <p class="micro-note reveal delay-2 center-note">
+        Whiteout requests are delivered securely to the booth queue in realtime.
+      </p>
     </main>
 
     <script src="vendor/supabase.js"></script>

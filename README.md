@@ -1,9 +1,9 @@
-# PulseDeck
+# Whiteout
 
-PulseDeck is a full party request platform:
+Whiteout is a full party request platform:
 - Web app for DJ auth, party creation, guest join, and Apple Music song requests
 - Node + Socket.IO API with Postgres + Prisma persistence
-- macOS Electron DJ desktop app that receives requests in realtime with a live queue UI
+- macOS Electron booth app that receives requests in realtime with a live queue UI
 
 ## Monorepo Apps
 - `apps/server`: Express, Prisma, Postgres, Socket.IO
@@ -89,7 +89,7 @@ It builds `apps/dj-app/dist/*.dmg` and attaches it to the GitHub Release.
 Users then:
 1. Open your Releases page.
 2. Download the latest `.dmg`.
-3. Install and run PulseDeck DJ.
+3. Install and run Whiteout.
 
 If local mac builds fail with a `7zip-bin` `ENOENT` error, move the repo to a path without spaces before running `npm run build:dj:mac`.
 
@@ -98,9 +98,9 @@ If local mac builds fail with a `7zip-bin` `ENOENT` error, move the repo to a pa
 This repo includes `.github/workflows/pages.yml` to publish the web UI to GitHub Pages.
 
 Expected Pages URL:
-- `https://pulsedeck-dj.github.io/pulsedeck/`
+- `https://white-out-dance.github.io/whiteout/`
 
-Note: `https://pulsedeck-dj.github.io/` may show 404 for this project site. Use the `/pulsedeck/` path.
+Note: `https://white-out-dance.github.io/` may show 404 for this project site. Use the `/whiteout/` path.
 
 Before enabling Pages, set repository variable:
 - `PULSE_API_BASE` = your public backend URL (for example your Render app URL).

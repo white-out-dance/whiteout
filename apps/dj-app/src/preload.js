@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('djApi', {
+  authStatus: () => ipcRenderer.invoke('auth:status'),
+  authLogin: (payload) => ipcRenderer.invoke('auth:login', payload),
+  authRegister: (payload) => ipcRenderer.invoke('auth:register', payload),
+  authLogout: () => ipcRenderer.invoke('auth:logout'),
+  createParty: (payload) => ipcRenderer.invoke('party:create', payload),
   loadConfig: () => ipcRenderer.invoke('config:load'),
   saveConfig: (payload) => ipcRenderer.invoke('config:save', payload),
   buildGuestQr: (payload) => ipcRenderer.invoke('dj:build-guest-qr', payload),
@@ -17,6 +22,7 @@ contextBridge.exposeInMainWorld('djApi', {
   openUrl: (payload) => ipcRenderer.invoke('system:open-url', payload),
   openPath: (payload) => ipcRenderer.invoke('system:open-path', payload),
   openTerminal: () => ipcRenderer.invoke('system:open-terminal'),
+  runTerminalCommand: (payload) => ipcRenderer.invoke('system:run-terminal-command', payload),
   getPartyInfo: () => ipcRenderer.invoke('dj:party-info'),
   downloadsStart: (payload) => ipcRenderer.invoke('downloads:start', payload),
   downloadsStop: () => ipcRenderer.invoke('downloads:stop'),

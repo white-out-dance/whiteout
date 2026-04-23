@@ -77,7 +77,7 @@ function buildCommandFromSongUrl(songUrl) {
   const partyFolderPath = String(helper.partyFolderPath || helper.baseFolderPath || '').trim();
   const url = String(songUrl || '').trim();
   const cookiesPath = shellPath(`${baseFolderPath}/cookies.txt`) || '$HOME/Desktop/gamdl/cookies.txt';
-  const outputPath = shellPath(partyFolderPath) || '$HOME/Desktop/gamdl/PulseDeck Party';
+  const outputPath = shellPath(partyFolderPath) || '$HOME/Desktop/gamdl/Whiteout Room';
 
   return `OUT=\"${outputPath}\" && gamdl --cookies-path \"${cookiesPath}\" --output-path \"$OUT\" \"${url}\" && find \"$OUT\" -type f \\( -iname \"*.m4a\" -o -iname \"*.mp3\" -o -iname \"*.wav\" -o -iname \"*.aiff\" -o -iname \"*.aif\" -o -iname \"*.flac\" -o -iname \"*.aac\" -o -iname \"*.ogg\" -o -iname \"*.alac\" \\) -print0 | while IFS= read -r -d '' f; do b=\"$(basename \"$f\")\"; [ \"$f\" = \"$OUT/$b\" ] && continue; t=\"$OUT/$b\"; if [ -e \"$t\" ]; then i=1; n=\"\${b%.*}\"; e=\"\${b##*.}\"; while [ -e \"$OUT/\${n} (\${i}).\${e}\" ]; do i=$((i+1)); done; t=\"$OUT/\${n} (\${i}).\${e}\"; fi; mv \"$f\" \"$t\"; done && find \"$OUT\" -type f ! \\( -iname \"*.m4a\" -o -iname \"*.mp3\" -o -iname \"*.wav\" -o -iname \"*.aiff\" -o -iname \"*.aif\" -o -iname \"*.flac\" -o -iname \"*.aac\" -o -iname \"*.ogg\" -o -iname \"*.alac\" \\) -delete && find \"$OUT\" -depth -type d -empty -delete && exit`;
 }
@@ -149,8 +149,12 @@ function render() {
   };
 
   if (current.songUrl) {
-    overlayOpenBtn.href = current.songUrl;
     overlayOpenBtn.classList.remove('hidden');
+    overlayOpenBtn.textContent = 'Open Terminal';
+    overlayOpenBtn.onclick = async () => {
+      const cmd = buildCommandFromSongUrl(current.songUrl);
+      await window.djApi.runTerminalCommand({ command: cmd });
+    };
     overlayCopyBtn.classList.remove('hidden');
     overlayCopyBtn.textContent = 'Copy Cmd';
     overlayCopyBtn.onclick = async () => {

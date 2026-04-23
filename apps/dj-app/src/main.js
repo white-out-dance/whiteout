@@ -8,7 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { io } = require('socket.io-client');
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
-const DEFAULT_GUEST_WEB_BASE = 'https://pulsedeck-dj.github.io/pulsedeck/guest.html';
+const DEFAULT_GUEST_WEB_BASE = 'https://white-out-dance.github.io/whiteout/guest.html';
 const HEARTBEAT_INTERVAL_MS = 10000;
 const POLL_INTERVAL_MS = 2000;
 
@@ -26,12 +26,13 @@ const DEFAULT_CONFIG = {
   djKey: '',
   guestWebBase: DEFAULT_GUEST_WEB_BASE,
   // Keep a stable, non-user-configured device name for session attribution.
-  deviceName: 'PulseDeck DJ'
+  deviceName: 'Whiteout Booth'
 };
 
 let mainWindow = null;
 let liveConnection = null;
 let overlayWindow = null;
+let authSession = null;
 
 let downloadsWatcher = {
   folderPath: '',
@@ -145,6 +146,53 @@ async function openTerminal() {
   }
 }
 
+function quoteForShellSingleArg(value) {
+  const raw = String(value || '');
+  return `'${raw.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function quoteForAppleScript(value) {
+  return `"${String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+async function runTerminalCommand(commandInput) {
+  const command = String(commandInput || '').trim();
+  if (!command) throw new Error('Command is required');
+
+  if (process.platform === 'darwin') {
+    // Always append `; exit` so Terminal closes after command completion.
+    const shellCommand = `bash -lc ${quoteForShellSingleArg(`${command}; exit`)}`;
+    await new Promise((resolve, reject) => {
+      execFile(
+        '/usr/bin/osascript',
+        [
+          '-e',
+          'tell application "Terminal" to activate',
+          '-e',
+          `tell application "Terminal" to do script ${quoteForAppleScript(shellCommand)}`
+        ],
+        (error) => {
+          if (error) reject(error);
+          else resolve();
+        }
+      );
+    });
+    return { ok: true };
+  }
+
+  if (process.platform === 'win32') {
+    await new Promise((resolve, reject) => {
+      execFile('cmd.exe', ['/c', 'start', '""', 'cmd.exe', '/c', command], (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    return { ok: true };
+  }
+
+  throw new Error('Run-in-terminal is currently supported on macOS and Windows.');
+}
+
 function stopDownloadsWatch() {
   if (downloadsWatcher.timer) {
     clearInterval(downloadsWatcher.timer);
@@ -213,7 +261,7 @@ function sanitizeFolderName(nameInput, fallback) {
     .replace(/\s+/g, ' ')
     .trim();
   const limited = cleaned.slice(0, 60);
-  return limited || fallback || 'PulseDeck Party';
+  return limited || fallback || 'Whiteout Room';
 }
 
 function ensurePartyFolder(baseFolderPath, partyName, partyCode) {
@@ -222,7 +270,7 @@ function ensurePartyFolder(baseFolderPath, partyName, partyCode) {
   const st = safeStat(base);
   if (!st || !st.isDirectory()) throw new Error('Selected base path is not a folder');
 
-  const fallback = partyCode ? `Party-${partyCode}` : 'PulseDeck Party';
+  const fallback = partyCode ? `Room-${partyCode}` : 'Whiteout Room';
   const folderName = sanitizeFolderName(partyName, fallback);
   const partyFolderPath = path.join(base, folderName);
   fs.mkdirSync(partyFolderPath, { recursive: true });
@@ -315,8 +363,8 @@ async function savePngFile(payload) {
     throw new Error('Invalid PNG data');
   }
 
-  const suggestedNameRaw = sanitizeText(payload?.suggestedName || 'PulseDeck-QR', 120);
-  const suggestedName = suggestedNameRaw.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'PulseDeck-QR';
+  const suggestedNameRaw = sanitizeText(payload?.suggestedName || 'Whiteout-QR', 120);
+  const suggestedName = suggestedNameRaw.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'Whiteout-QR';
   const defaultPath = path.join(app.getPath('downloads'), `${suggestedName}.png`);
 
   const result = await dialog.showSaveDialog(mainWindow, {
@@ -405,6 +453,104 @@ function buildSupabaseClient(config) {
   return createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
+}
+
+function sanitizeEmail(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .slice(0, 220);
+}
+
+async function authLogin(payload) {
+  const email = sanitizeEmail(payload?.email);
+  const password = String(payload?.password || '').trim();
+  if (!email || !password) throw new Error('Email and password are required.');
+
+  const config = loadConfig();
+  const supabase = buildSupabaseClient(config);
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error || !data?.session?.access_token || !data?.session?.refresh_token) {
+    throw new Error(error?.message || 'Login failed');
+  }
+
+  authSession = {
+    email: data.user?.email ? sanitizeEmail(data.user.email) : email,
+    accessToken: String(data.session.access_token),
+    refreshToken: String(data.session.refresh_token)
+  };
+
+  return { ok: true, email: authSession.email };
+}
+
+async function authRegister(payload) {
+  const email = sanitizeEmail(payload?.email);
+  const password = String(payload?.password || '').trim();
+  if (!email || !password) throw new Error('Email and password are required.');
+  if (password.length < 10) throw new Error('Password must be at least 10 characters.');
+
+  const config = loadConfig();
+  const supabase = buildSupabaseClient(config);
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) throw new Error(error.message || 'Register failed');
+
+  // Attempt immediate login (works when email confirmation is disabled).
+  return await authLogin({ email, password });
+}
+
+function authLogout() {
+  authSession = null;
+  return { ok: true };
+}
+
+function authStatus() {
+  return {
+    ok: true,
+    authenticated: Boolean(authSession),
+    email: authSession?.email || ''
+  };
+}
+
+async function createPartyForDj(payload) {
+  if (!authSession?.accessToken || !authSession?.refreshToken) {
+    throw new Error('Login required.');
+  }
+
+  const partyName = sanitizeText(payload?.partyName || '', 80);
+  if (!partyName) {
+    throw new Error('Party name is required.');
+  }
+
+  const config = loadConfig();
+  const supabase = buildSupabaseClient(config);
+  const { error: sessionErr } = await supabase.auth.setSession({
+    access_token: authSession.accessToken,
+    refresh_token: authSession.refreshToken
+  });
+  if (sessionErr) {
+    authSession = null;
+    throw new Error('Session expired. Log in again.');
+  }
+
+  const { data, error } = await supabase.rpc('create_party', { p_name: partyName });
+  if (error) throw new Error(error.message || 'Failed to create party');
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.code || !row?.dj_key) throw new Error('Failed to create party');
+
+  const updated = saveConfig({
+    ...config,
+    partyCode: String(row.code),
+    djKey: String(row.dj_key)
+  });
+
+  return {
+    ok: true,
+    code: String(row.code),
+    djKey: String(row.dj_key),
+    partyName,
+    expiresAt: row.expires_at ? String(row.expires_at) : '',
+    config: updated
+  };
 }
 
 function buildGuestJoinUrl(guestWebBaseInput, partyCodeInput) {
@@ -658,6 +804,10 @@ async function connectDj(configInput) {
   await disconnectDj('Restarting connection...');
 
   try {
+    if (!authSession) {
+      throw new Error('Login required before connecting.');
+    }
+
     const config = saveConfig(configInput);
     const partyCode = normalizePartyCode(config.partyCode);
 
@@ -912,7 +1062,7 @@ function createWindow() {
     height: 820,
     minWidth: 980,
     minHeight: 680,
-    title: 'PulseDeck DJ',
+    title: 'Whiteout Booth',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -940,7 +1090,7 @@ function openOverlayWindow() {
     skipTaskbar: true,
     frame: false,
     transparent: true,
-    title: 'PulseDeck Overlay',
+    title: 'Whiteout Overlay',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -959,6 +1109,11 @@ function openOverlayWindow() {
 app.whenReady().then(() => {
   ipcMain.handle('config:load', () => loadConfig());
   ipcMain.handle('config:save', (_event, payload) => saveConfig(payload));
+  ipcMain.handle('auth:status', async () => authStatus());
+  ipcMain.handle('auth:login', async (_event, payload) => authLogin(payload));
+  ipcMain.handle('auth:register', async (_event, payload) => authRegister(payload));
+  ipcMain.handle('auth:logout', async () => authLogout());
+  ipcMain.handle('party:create', async (_event, payload) => createPartyForDj(payload));
   ipcMain.handle('dj:build-guest-qr', async (_event, payload) => buildGuestQr(payload));
   ipcMain.handle('dj:connect', async (_event, payload) => connectDj(payload));
   ipcMain.handle('dj:disconnect', async () => disconnectDj('Disconnected by user'));
@@ -1001,6 +1156,9 @@ app.whenReady().then(() => {
   ipcMain.handle('system:open-terminal', async () => {
     const ok = await openTerminal();
     return { ok };
+  });
+  ipcMain.handle('system:run-terminal-command', async (_event, payload) => {
+    return runTerminalCommand(payload?.command);
   });
   ipcMain.handle('dj:party-info', async () => {
     return {

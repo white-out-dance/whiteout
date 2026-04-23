@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PulseDeck Party Requests</title>
-    <meta name="theme-color" content="#00b9ff" />
+    <title>Whiteout | Request Portal</title>
+    <meta name="theme-color" content="#070707" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@500;600;700;800;900&family=Lilita+One&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
@@ -21,74 +21,111 @@
 
     <main class="shell">
       <header class="hero reveal">
-        <p class="eyebrow">PulseDeck Official Request System</p>
-        <h1>Simple For Guests. Solid For DJs.</h1>
-        <p class="subtitle">
-          Secure DJ login, one-tap party creation, and a clean song request flow with Apple Music search.
-        </p>
+        <div class="hero-copy">
+          <p class="eyebrow">white-out dance presents</p>
+          <p class="event-line">All white. All night. Live requests.</p>
+          <h1 class="hero-title">
+            <span class="wordmark">Whiteout</span>
+            <span class="hero-title-sub">Guest + booth request portal</span>
+          </h1>
+          <p class="subtitle">
+            Built for phones first. Guests join fast, send tracks in seconds, and the booth keeps the line moving in
+            realtime.
+          </p>
 
-        <div class="hero-meta">
-          <p id="backendStatus" class="status status-info" aria-live="polite">Checking backend connection...</p>
-          <button id="openSetupBtn" class="btn btn-ghost" type="button">Connection Settings</button>
+          <div class="hero-meta">
+            <p id="backendStatus" class="status status-info" aria-live="polite">Checking live connection...</p>
+            <button id="openSetupBtn" class="btn btn-ghost" type="button">Connection Setup</button>
+          </div>
+
+          <div class="flow-strip" aria-label="How it works">
+            <span>Sign in</span>
+            <span>Create room</span>
+            <span>Post the QR</span>
+            <span>Requests hit the booth</span>
+          </div>
+
+          <div class="marquee" aria-hidden="true">
+            <div class="marquee-track">
+              <span>WHITEOUT</span>
+              <span>ALL WHITE</span>
+              <span>ALL NIGHT</span>
+              <span>REQUESTS LIVE</span>
+              <span>WHITEOUT</span>
+              <span>ALL WHITE</span>
+              <span>ALL NIGHT</span>
+              <span>REQUESTS LIVE</span>
+            </div>
+          </div>
         </div>
 
-        <div class="flow-strip" aria-label="How it works">
-          <span>DJ signs in</span>
-          <span>Party created</span>
-          <span>DJ app claims code</span>
-          <span>Guests request songs</span>
+        <div class="poster-stack" aria-label="Whiteout posters">
+          <figure class="poster-card poster-card-main">
+            <img src="assets/poster-helmet.jpg" alt="Whiteout event poster" />
+          </figure>
+          <figure class="poster-card poster-card-top">
+            <img src="assets/poster-cash-open.jpg" alt="Whiteout promo poster" />
+          </figure>
+          <figure class="poster-card poster-card-bottom">
+            <img src="assets/poster-invite.jpg" alt="Whiteout invite poster" />
+          </figure>
         </div>
       </header>
 
-      <nav class="window-tabs reveal delay-1" aria-label="App windows">
-        <button id="tabGuest" class="window-tab is-active" type="button" data-window="guest">Guest Window</button>
-        <button id="tabDj" class="window-tab" type="button" data-window="dj">DJ Window</button>
-        <button id="tabSetup" class="window-tab" type="button" data-window="setup">Setup Window</button>
-        <button id="tabStatus" class="window-tab" type="button" data-window="status">Status Window</button>
-        <button id="tabHelp" class="window-tab" type="button" data-window="help">Help Window</button>
+      <nav class="window-tabs reveal delay-1" aria-label="Portal views">
+        <button id="tabGuest" class="window-tab is-active" type="button" data-window="guest">Request</button>
+        <button id="tabDj" class="window-tab" type="button" data-window="dj">Host</button>
+        <button id="tabSetup" class="window-tab" type="button" data-window="setup">Connect</button>
+        <button id="tabStatus" class="window-tab" type="button" data-window="status">Live State</button>
+        <button id="tabHelp" class="window-tab" type="button" data-window="help">Flyers</button>
       </nav>
 
       <section id="guestWindow" class="window-panel reveal delay-2" data-window="guest">
-        <article class="panel" id="joinSection">
-          <div class="panel-head">
-            <h2>Join Party</h2>
-            <span class="chip">Guest</span>
-          </div>
-          <p class="panel-copy">Enter the party code from the DJ screen.</p>
-
-          <form id="joinForm" class="form-grid">
-            <label for="partyCode">Party Code</label>
-            <input id="partyCode" maxlength="6" autocomplete="off" required />
-            <button type="submit" class="btn btn-secondary">Join Party</button>
-          </form>
-          <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for code.</p>
-          <button id="stopCheckingBtn" class="btn btn-ghost btn-mini hidden" type="button">Stop Checking</button>
-        </article>
-
-        <article class="panel" id="guestSummaryPanel">
-          <div class="panel-head">
-            <h2>Guest Session</h2>
-            <span class="chip">Now</span>
-          </div>
-          <div class="summary-grid">
-            <div class="summary-item">
-              <span>Connected Party</span>
-              <strong id="guestPartyCodeOut">------</strong>
+        <div class="panel-grid panel-grid-2 guest-panel-grid">
+          <article class="panel panel-priority" id="joinSection">
+            <div class="panel-head">
+              <h2>Join Whiteout</h2>
+              <span class="chip">Guest Pass</span>
             </div>
-            <div class="summary-item">
-              <span>Requests Sent</span>
-              <strong id="guestRequestCountOut">0</strong>
+            <p class="panel-copy">Enter the party code from the booth screen. Mobile-first and ready in a few taps.</p>
+
+            <form id="joinForm" class="form-grid">
+              <label for="partyCode">Party Code</label>
+              <input id="partyCode" maxlength="6" autocomplete="off" placeholder="ABC123" required />
+              <button type="submit" class="btn btn-primary">Join The Room</button>
+            </form>
+            <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for a code.</p>
+            <button id="stopCheckingBtn" class="btn btn-ghost btn-mini hidden" type="button">Stop Checking</button>
+          </article>
+
+          <article class="panel" id="guestSummaryPanel">
+            <div class="panel-head">
+              <h2>Your Pass</h2>
+              <span class="chip">Live</span>
             </div>
-          </div>
-          <p id="guestLastRequestOut" class="micro-note">No requests sent yet.</p>
-          <ul id="guestRecentRequests" class="recent-list" aria-label="Recent requests"></ul>
-        </article>
+
+            <div class="summary-grid">
+              <div class="summary-item">
+                <span>Connected Room</span>
+                <strong id="guestPartyCodeOut">------</strong>
+              </div>
+              <div class="summary-item">
+                <span>Requests Sent</span>
+                <strong id="guestRequestCountOut">0</strong>
+              </div>
+            </div>
+
+            <p id="guestLastRequestOut" class="micro-note">No tracks sent yet.</p>
+            <ul id="guestRecentRequests" class="recent-list" aria-label="Recent requests"></ul>
+          </article>
+        </div>
 
         <article class="panel hidden" id="requestSection">
           <div class="panel-head">
-            <h2>Send Song Request</h2>
-            <span class="chip">Live Queue</span>
+            <h2>Request A Track</h2>
+            <span class="chip">Queue Live</span>
           </div>
+          <p class="panel-copy">Search fast, tap once, and send it straight to the booth.</p>
 
           <form id="requestForm" class="form-grid">
             <p class="mini-label">Choose service</p>
@@ -108,12 +145,12 @@
             </div>
 
             <div id="appleSearchSection" class="apple-search">
-              <label for="appleSearchTerm">Search Apple Music</label>
+              <label for="appleSearchTerm">Search the track</label>
               <div class="search-row">
-                <input id="appleSearchTerm" maxlength="120" placeholder="Search song or artist" />
+                <input id="appleSearchTerm" maxlength="120" placeholder="Song, artist, or remix" />
                 <button id="appleSearchBtn" class="btn btn-secondary" type="button">Search</button>
               </div>
-              <p id="appleSearchStatus" class="status status-neutral">Search to autofill song info.</p>
+              <p id="appleSearchStatus" class="status status-neutral">Search to autofill the request.</p>
               <div id="appleSearchResults" class="search-results"></div>
             </div>
 
@@ -124,20 +161,18 @@
             <input id="artist" maxlength="120" required />
 
             <details class="advanced-link-block">
-              <summary>Advanced: Paste Song Link (Optional)</summary>
+              <summary>Paste a link instead</summary>
               <label for="songUrl" class="advanced-label">Song URL</label>
               <input id="songUrl" maxlength="500" placeholder="https://music.apple.com/..." />
               <div class="link-tools">
-                <button id="songUrlAutofillBtn" class="btn btn-ghost btn-mini" type="button">
-                  Autofill From Link
-                </button>
+                <button id="songUrlAutofillBtn" class="btn btn-ghost btn-mini" type="button">Autofill Link</button>
               </div>
               <p id="songUrlAutofillStatus" class="status status-neutral" aria-live="polite">
-                Paste a link and tap Autofill to pull title + artist.
+                Paste a link and Whiteout will try to pull the title and artist.
               </p>
             </details>
 
-            <button type="submit" class="btn btn-primary">Submit Request</button>
+            <button type="submit" class="btn btn-primary">Send To Booth</button>
           </form>
 
           <p id="requestResult" class="status status-neutral" aria-live="polite">No request submitted yet.</p>
@@ -148,10 +183,10 @@
         <div class="panel-grid panel-grid-2">
           <article class="panel" id="authSection">
             <div class="panel-head">
-              <h2>DJ Account</h2>
-              <span class="chip">Auth</span>
+              <h2>Host Login</h2>
+              <span class="chip">Secure</span>
             </div>
-            <p class="panel-copy">Register or log in before creating party codes.</p>
+            <p class="panel-copy">Sign in before launching a room and handing the queue to the booth.</p>
 
             <form id="authForm" class="form-grid">
               <label for="authEmail">Email</label>
@@ -173,38 +208,38 @@
 
           <article class="panel" id="createSection">
             <div class="panel-head">
-              <h2>Party Control</h2>
-              <span class="chip">Secure</span>
+              <h2>Launch A Room</h2>
+              <span class="chip">Booth Control</span>
             </div>
-            <p class="panel-copy">Create a room and private DJ key for your DJ desktop app.</p>
+            <p class="panel-copy">Generate the room code, keep the DJ key private, and hand the booth the live link.</p>
 
             <a
               class="btn btn-download-large"
-              href="https://github.com/pulsedeck-dj/pulsedeck/releases/latest"
+              href="https://github.com/white-out-dance/whiteout/releases/latest"
               target="_blank"
               rel="noreferrer noopener"
-              >Download PulseDeck DJ App</a
+              >Download Whiteout</a
             >
-            <p class="micro-note">Mac DMG is available in each GitHub Release under Assets.</p>
+            <p class="micro-note">The latest booth `.dmg` is always attached to Releases.</p>
 
             <form id="partyNameForm" class="form-grid" autocomplete="off">
-              <label for="partyNameInput">Party name</label>
+              <label for="partyNameInput">Room Name</label>
               <input
                 id="partyNameInput"
                 maxlength="80"
-                placeholder="Austin & Jessica's Wedding"
+                placeholder="Whiteout Main Floor"
                 aria-label="Party name"
                 required
               />
-              <p class="micro-note">This shows to guests and helps DJs keep downloads organized.</p>
+              <p class="micro-note">This label appears to guests and helps the booth keep exports organized.</p>
             </form>
 
-            <button id="createPartyBtn" class="btn btn-primary" disabled>Create Party</button>
-            <p id="createResult" class="status status-neutral" aria-live="polite">Sign in to create parties.</p>
+            <button id="createPartyBtn" class="btn btn-primary" disabled>Create Room</button>
+            <p id="createResult" class="status status-neutral" aria-live="polite">Sign in to launch a room.</p>
 
             <div id="djSecrets" class="secret-grid hidden" aria-live="polite">
               <div class="secret-card">
-                <span>Party Code</span>
+                <span>Room Code</span>
                 <strong id="partyCodeOut">------</strong>
                 <button id="copyPartyCodeBtn" class="btn btn-ghost" type="button">Copy Code</button>
               </div>
@@ -219,14 +254,12 @@
               <p class="mini-label">Guest Link</p>
               <p id="djGuestLinkOut" class="share-link"></p>
               <div class="button-row">
-                <button id="copyGuestLinkBtn" class="btn btn-secondary" type="button">Copy Guest Link</button>
-                <button id="openGuestWindowBtn" class="btn btn-ghost" type="button">Open Guest Window</button>
+                <button id="copyGuestLinkBtn" class="btn btn-secondary" type="button">Copy Link</button>
+                <button id="openGuestWindowBtn" class="btn btn-ghost" type="button">Open Request View</button>
               </div>
             </div>
 
-            <p class="micro-note">
-              Share the party code publicly. Keep the DJ key private and only enter it in PulseDeck DJ desktop.
-            </p>
+            <p class="micro-note">Share the room code publicly. Only the booth should ever receive the DJ key.</p>
           </article>
         </div>
       </section>
@@ -235,14 +268,14 @@
         <div class="panel-grid panel-grid-2">
           <article class="panel">
             <div class="panel-head">
-              <h2>Backend Connection</h2>
+              <h2>Connect Whiteout</h2>
               <div class="panel-head-actions">
                 <button id="setupBackBtn" class="btn btn-ghost btn-mini" type="button">Back</button>
                 <span class="chip">Required</span>
               </div>
             </div>
             <p class="panel-copy">
-              Set your API base URL once. This makes the live site work even if default config is empty.
+              Save the API base once and every Whiteout page on this device will know where the live backend lives.
             </p>
 
             <form id="apiBaseConfigForm" class="form-grid">
@@ -257,22 +290,22 @@
             </form>
 
             <p id="apiBaseConfigStatus" class="status status-neutral" aria-live="polite">No saved API base URL yet.</p>
-            <p class="micro-note">Current effective API base: <span id="effectiveApiBase">Not configured</span></p>
+            <p class="micro-note">Current live endpoint: <span id="effectiveApiBase">Not configured</span></p>
           </article>
 
-          <article class="panel">
+          <article class="panel panel-dark">
             <div class="panel-head">
-              <h2>Operator Guide</h2>
-              <span class="chip">Quick Start</span>
+              <h2>Host Flow</h2>
+              <span class="chip chip-dark">Quick Start</span>
             </div>
             <ol class="guide-list">
-              <li>Open DJ Window, sign in, and create a party.</li>
-              <li>Open PulseDeck DJ desktop and enter API Base URL, Party Code, and DJ Key.</li>
-              <li>Click Connect in the DJ desktop app.</li>
-              <li>Guests open Guest Window and enter the code to submit songs.</li>
+              <li>Open Host, sign in, and create a room.</li>
+              <li>Open Whiteout on the booth machine and enter API Base URL, room code, and DJ key.</li>
+              <li>Connect and throw the QR on screen.</li>
+              <li>Guests scan or join with the code and send tracks from their phones.</li>
             </ol>
-            <p class="micro-note">
-              Tip: The DJ app can generate a QR code that opens this page with the party code already filled in.
+            <p class="micro-note micro-note-invert">
+              Tip: Whiteout QR posters open the guest page with the room code already filled in.
             </p>
           </article>
         </div>
@@ -282,8 +315,8 @@
         <div class="panel-grid panel-grid-2">
           <article class="panel">
             <div class="panel-head">
-              <h2>System Status</h2>
-              <span class="chip">Live</span>
+              <h2>Live State</h2>
+              <span class="chip">Realtime</span>
             </div>
 
             <div class="status-card-grid">
@@ -292,11 +325,11 @@
                 <strong id="sysBackendValue">Checking...</strong>
               </article>
               <article class="status-card">
-                <p>DJ Account</p>
+                <p>Host Account</p>
                 <strong id="sysAuthValue">Signed out</strong>
               </article>
               <article class="status-card">
-                <p>Latest Party</p>
+                <p>Latest Room</p>
                 <strong id="sysPartyValue">------</strong>
               </article>
               <article class="status-card">
@@ -306,10 +339,10 @@
             </div>
           </article>
 
-          <article class="panel">
+          <article class="panel panel-dark">
             <div class="panel-head">
               <h2>Event Timeline</h2>
-              <button id="clearTimelineBtn" class="btn btn-ghost" type="button">Clear</button>
+              <button id="clearTimelineBtn" class="btn btn-ghost btn-ghost-invert" type="button">Clear</button>
             </div>
             <div id="eventTimeline" class="timeline-list"></div>
           </article>
@@ -320,34 +353,41 @@
         <div class="panel-grid panel-grid-2">
           <article class="panel">
             <div class="panel-head">
-              <h2>Download DJ App</h2>
-              <span class="chip">macOS</span>
+              <h2>Download Whiteout</h2>
+              <span class="chip">macOS Booth</span>
             </div>
             <p class="panel-copy">
-              PulseDeck DJ is a downloadable macOS desktop app. Install it to claim the DJ role and receive requests in
-              realtime.
+              Whiteout for macOS claims the booth role, listens for live requests, and generates the on-screen QR
+              posters.
             </p>
             <a
               class="btn btn-primary"
-              href="https://github.com/pulsedeck-dj/pulsedeck/releases"
+              href="https://github.com/white-out-dance/whiteout/releases"
               target="_blank"
               rel="noreferrer noopener"
             >
               Open Releases
             </a>
-            <p class="micro-note">Tip: Always download the latest `.dmg` from Releases.</p>
+            <p class="micro-note">Always download the newest `.dmg` from Releases.</p>
           </article>
 
-          <article class="panel">
+          <article class="panel panel-posters">
             <div class="panel-head">
-              <h2>Troubleshooting</h2>
-              <span class="chip">Fix</span>
+              <h2>Brand Scene</h2>
+              <span class="chip">Whiteout</span>
             </div>
+
+            <div class="poster-grid-mini">
+              <img src="assets/poster-cash-open.jpg" alt="Whiteout balloon poster" />
+              <img src="assets/poster-invite.jpg" alt="Whiteout invite poster" />
+              <img src="assets/poster-venues.jpg" alt="Whiteout venue poster" />
+            </div>
+
             <ul class="help-list">
-              <li><strong>Backend not configured:</strong> open Setup Window and set your API Base URL.</li>
-              <li><strong>DJ not active:</strong> the DJ must open the DJ app and click Connect for that party code.</li>
-              <li><strong>Apple Music search unavailable:</strong> backend cannot reach Apple right now. Optional: add an Apple developer token for full catalog search.</li>
-              <li><strong>Keep DJ key private:</strong> only paste it into PulseDeck DJ desktop.</li>
+              <li><strong>Room won’t join:</strong> verify the booth is connected before guests enter the code.</li>
+              <li><strong>Search is missing tracks:</strong> Apple or your backend may be rate limited. Retry.</li>
+              <li><strong>Need to rewire the live site:</strong> open Connect and update the API base URL.</li>
+              <li><strong>Keep the DJ key private:</strong> only the booth app should receive it.</li>
             </ul>
           </article>
         </div>

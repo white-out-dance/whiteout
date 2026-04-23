@@ -1,8 +1,8 @@
 {
   "name": "dj-app",
   "version": "0.3.9",
-  "description": "PulseDeck macOS DJ desktop app",
-  "author": "PulseDeck",
+  "description": "Whiteout macOS booth app",
+  "author": "white-out dance",
   "private": true,
   "main": "src/main.js",
   "scripts": {
@@ -23,8 +23,8 @@
     "electron-builder": "24.13.3"
   },
   "build": {
-    "appId": "com.pulsedeck.dj",
-    "productName": "PulseDeck DJ",
+    "appId": "com.whiteout.app",
+    "productName": "Whiteout",
     "npmRebuild": false,
     "files": [
       "src/**/*",
@@ -39,7 +39,7 @@
       "target": [
         "dmg"
       ],
-      "artifactName": "PulseDeck-DJ-${version}-${arch}.${ext}"
+      "artifactName": "Whiteout-${version}-${arch}.${ext}"
     },
     "dmg": {
       "writeUpdateInfo": false
