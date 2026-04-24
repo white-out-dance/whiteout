@@ -624,8 +624,8 @@ as $$
 declare
   code_norm text := public.normalize_party_code(p_code);
   token_clean text := trim(coalesce(p_dj_token,''));
-  party_row public.parties%rowtype;
-  session_row public.dj_sessions%rowtype;
+  party_id_value uuid;
+  session_token_hash text;
 begin
   if code_norm !~ '^[A-Z0-9]{6}$' then
     raise exception 'Invalid party code';
@@ -635,17 +635,25 @@ begin
     raise exception 'Missing DJ credentials';
   end if;
 
-  select * into party_row from public.parties where code = code_norm;
-  if not found then
+  select p.id
+    into party_id_value
+    from public.parties p
+   where p.code = code_norm;
+  if party_id_value is null then
     raise exception 'Party not found';
   end if;
 
-  select * into session_row from public.dj_sessions where id = p_session_id and party_id = party_row.id and active = true;
-  if not found then
+  select s.token_hash
+    into session_token_hash
+    from public.dj_sessions s
+   where s.id = p_session_id
+     and s.party_id = party_id_value
+     and s.active = true;
+  if session_token_hash is null then
     raise exception 'Invalid DJ session';
   end if;
 
-  if session_row.token_hash <> public.sha256_hex(token_clean) then
+  if session_token_hash <> public.sha256_hex(token_clean) then
     raise exception 'Invalid DJ token';
   end if;
 
@@ -656,27 +664,44 @@ begin
       count(*) filter (where v.value = 1)::int as upvotes,
       count(*) filter (where v.value = -1)::int as downvotes
     from public.request_votes v
-    where v.party_id = party_row.id
+    where v.party_id = party_id_value
     group by v.request_id
   )
-  select
-    r.id,
-    r.seq_no,
-    r.title,
-    r.artist,
-    r.service,
-    coalesce(r.song_url,''),
-    r.status,
-    r.played_at,
-    r.played_by,
-    r.created_at,
-    coalesce(vt.upvotes, 0)::int as upvotes,
-    coalesce(vt.downvotes, 0)::int as downvotes,
-    (coalesce(vt.upvotes, 0) - coalesce(vt.downvotes, 0))::int as score
-  from public.song_requests r
-  left join vote_totals vt on vt.request_id = r.id
-  where r.party_id = party_row.id
-  order by r.seq_no asc;
+  select *
+    from (
+      select
+        r.id as request_id,
+        r.seq_no as request_seq_no,
+        r.title as request_title,
+        r.artist as request_artist,
+        r.service as request_service,
+        coalesce(r.song_url,'') as request_song_url,
+        r.status as request_status,
+        r.played_at as request_played_at,
+        r.played_by as request_played_by,
+        r.created_at as request_created_at,
+        coalesce(vt.upvotes, 0)::int as request_upvotes,
+        coalesce(vt.downvotes, 0)::int as request_downvotes,
+        (coalesce(vt.upvotes, 0) - coalesce(vt.downvotes, 0))::int as request_score
+      from public.song_requests r
+      left join vote_totals vt on vt.request_id = r.id
+      where r.party_id = party_id_value
+      order by r.seq_no asc
+    ) ranked_requests(
+      id,
+      seq_no,
+      title,
+      artist,
+      service,
+      song_url,
+      status,
+      played_at,
+      played_by,
+      created_at,
+      upvotes,
+      downvotes,
+      score
+    );
 end;
 $$;
 
