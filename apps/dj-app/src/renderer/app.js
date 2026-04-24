@@ -1127,6 +1127,16 @@ function drawWrappedText(ctx, textInput, x, y, maxWidth, lineHeight, maxLines = 
   return currentY;
 }
 
+function fitImageWithin(image, maxWidth, maxHeight) {
+  const sourceWidth = Math.max(1, Number(image?.naturalWidth || image?.width || 1));
+  const sourceHeight = Math.max(1, Number(image?.naturalHeight || image?.height || 1));
+  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale))
+  };
+}
+
 async function buildQrPosterPng(payload, preset) {
   const spec = presetSpec(preset);
   const partyCode = String(payload?.partyCode || '').trim() || '------';
@@ -1146,7 +1156,7 @@ async function buildQrPosterPng(payload, preset) {
   ctx.fillStyle = '#070707';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  const markSrc = new URL('assets/whiteout-mark.svg', window.location.href).toString();
+  const markSrc = new URL('assets/whiteout-logo.png', window.location.href).toString();
   const [qrImg, markImg] = await Promise.all([
     loadImageFromSource(qrDataUrl),
     loadImageFromSource(markSrc).catch(() => null)
@@ -1170,10 +1180,16 @@ async function buildQrPosterPng(payload, preset) {
   }
 
   if (markImg) {
+    const bgMark = fitImageWithin(markImg, canvasWidth * 0.22, canvasHeight * 0.68);
     ctx.save();
-    ctx.globalAlpha = 0.12;
-    const bgSize = Math.round(canvasHeight * 0.82);
-    ctx.drawImage(markImg, canvasWidth - bgSize - canvasWidth * 0.05, canvasHeight * 0.08, bgSize, bgSize);
+    ctx.globalAlpha = 0.15;
+    ctx.drawImage(
+      markImg,
+      canvasWidth - bgMark.width - canvasWidth * 0.04,
+      canvasHeight * 0.08,
+      bgMark.width,
+      bgMark.height
+    );
     ctx.restore();
   }
 
@@ -1260,10 +1276,16 @@ async function buildQrPosterPng(payload, preset) {
   }
 
   if (markImg) {
-    const stickerSize = Math.round(qrCardW * 0.54);
+    const stickerSize = fitImageWithin(markImg, qrCardW * 0.56, qrCardH * 0.2);
     ctx.save();
     ctx.globalAlpha = 0.98;
-    ctx.drawImage(markImg, qrCardX + Math.round(qrCardW * 0.23), qrCardY + Math.round(qrCardH * 0.06), stickerSize, stickerSize);
+    ctx.drawImage(
+      markImg,
+      qrCardX + Math.round((qrCardW - stickerSize.width) / 2),
+      qrCardY + Math.round(qrCardH * 0.05),
+      stickerSize.width,
+      stickerSize.height
+    );
     ctx.restore();
   }
 

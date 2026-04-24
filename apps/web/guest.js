@@ -687,6 +687,11 @@ function setActiveParty(code, partyName, djActive) {
   activePartyName = String(partyName || '').trim();
   activeDjReady = Boolean(djActive);
   myRequestIds = loadMyRequestIds(code);
+  if (pickedSong) {
+    setStatus(requestResult, 'Song selected. Tap Send Request.', 'success');
+  } else {
+    setStatus(requestResult, 'No request submitted yet.', 'neutral');
+  }
   updateSummary();
   startFeedPolling();
 }

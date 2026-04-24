@@ -59,7 +59,9 @@ function normalizeAllowedOrigin(entry) {
 
 function readAllowedOrigins() {
   const envValue = String(process.env.WEB_ORIGIN || '').trim();
-  const rawList = envValue ? envValue.split(',') : ['http://localhost:5173'];
+  const rawList = envValue
+    ? envValue.split(',')
+    : ['http://localhost:5173', 'http://127.0.0.1:5173'];
   const list = rawList.map(normalizeAllowedOrigin).filter(Boolean);
   return Array.from(new Set(list));
 }
