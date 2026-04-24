@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('djApi', {
   buildGuestQr: (payload) => ipcRenderer.invoke('dj:build-guest-qr', payload),
   connect: (payload) => ipcRenderer.invoke('dj:connect', payload),
   disconnect: () => ipcRenderer.invoke('dj:disconnect'),
+  markApproved: (payload) => ipcRenderer.invoke('dj:mark-approved', payload),
   markPlayed: (payload) => ipcRenderer.invoke('dj:mark-played', payload),
   markQueued: (payload) => ipcRenderer.invoke('dj:mark-queued', payload),
   markRejected: (payload) => ipcRenderer.invoke('dj:mark-rejected', payload),

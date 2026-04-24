@@ -73,7 +73,7 @@ const openSetupBtn = document.getElementById('openSetupBtn');
 const setupBackBtn = document.getElementById('setupBackBtn');
 
 const windowPanels = Array.from(document.querySelectorAll('.window-panel'));
-const windowTabs = [tabGuest, tabDj, tabSetup, tabStatus, tabHelp];
+const windowTabs = [tabGuest, tabDj, tabSetup, tabStatus, tabHelp].filter(Boolean);
 
 const authForm = document.getElementById('authForm');
 const authEmailInput = document.getElementById('authEmail');
@@ -176,6 +176,7 @@ function nowLabel(iso) {
 }
 
 function setStatus(element, text, type = 'neutral') {
+  if (!element) return;
   element.classList.remove('status-neutral', 'status-info', 'status-success', 'status-error');
   element.classList.add(`status-${type}`);
   element.textContent = text;
@@ -187,6 +188,7 @@ function setSongUrlAutofillStatus(text, type = 'neutral') {
 }
 
 function setButtonLoading(button, loading, loadingLabel, idleLabel) {
+  if (!button) return;
   button.disabled = loading;
   button.textContent = loading ? loadingLabel : idleLabel;
 }
@@ -250,6 +252,7 @@ function setWindow(windowName) {
 }
 
 function updateEffectiveApiBaseLabel() {
+  if (!effectiveApiBase) return;
   if (supabaseClient) {
     const cfg = readSupabaseConfig();
     effectiveApiBase.textContent = cfg ? `Supabase: ${cfg.url}` : 'Supabase configured';
@@ -384,7 +387,9 @@ function setApiBase(nextValue) {
   backendChecked = false;
   backendReachable = false;
 
-  apiBaseConfigInput.value = apiBase;
+  if (apiBaseConfigInput) {
+    apiBaseConfigInput.value = apiBase;
+  }
   updateEffectiveApiBaseLabel();
   updateSystemStatus();
   setAuthUi();
@@ -611,7 +616,7 @@ async function pingBackendHealth(targetBase) {
 
 async function apiRequest(path, options = {}) {
   if (!apiBase) {
-    throw new Error('Backend is not configured. Open Setup Window and save API Base URL.');
+    throw new Error('Whiteout live sync is not configured yet.');
   }
 
   const controller = new AbortController();
@@ -782,8 +787,8 @@ async function checkBackendHealth() {
   if (supabaseClient) {
     backendChecked = true;
     backendReachable = true;
-    setStatus(backendStatus, 'Backend connected (Supabase).', 'success');
-    setStatus(apiBaseConfigStatus, 'Supabase configured via site config.', 'success');
+    setStatus(backendStatus, 'Whiteout live sync is ready.', 'success');
+    setStatus(apiBaseConfigStatus, 'Whiteout live sync is configured.', 'success');
     updateEffectiveApiBaseLabel();
     updateSystemStatus();
     return true;
@@ -792,26 +797,26 @@ async function checkBackendHealth() {
   if (!apiBase) {
     backendChecked = false;
     backendReachable = false;
-    setStatus(backendStatus, 'Backend not configured. Open Setup Window and set API Base URL.', 'error');
-    setStatus(apiBaseConfigStatus, 'No saved API base URL yet.', 'neutral');
+    setStatus(backendStatus, 'Whiteout live sync is not configured yet.', 'error');
+    setStatus(apiBaseConfigStatus, 'No live sync URL saved yet.', 'neutral');
     updateSystemStatus();
     return false;
   }
 
-  setStatus(backendStatus, `Connecting to backend: ${apiBase}`, 'info');
+  setStatus(backendStatus, `Connecting to Whiteout live sync: ${apiBase}`, 'info');
 
   try {
     await pingBackendHealth(apiBase);
     backendChecked = true;
     backendReachable = true;
-    setStatus(backendStatus, 'Backend connected.', 'success');
+    setStatus(backendStatus, 'Whiteout live sync is ready.', 'success');
     setStatus(apiBaseConfigStatus, `Connected to ${apiBase}`, 'success');
     updateSystemStatus();
     return true;
   } catch (error) {
     backendChecked = true;
     backendReachable = false;
-    setStatus(backendStatus, `Backend unreachable (${apiBase}). Check Setup Window.`, 'error');
+    setStatus(backendStatus, `Whiteout live sync is unreachable (${apiBase}).`, 'error');
     setStatus(apiBaseConfigStatus, error.message || 'Backend health check failed.', 'error');
     updateSystemStatus();
     return false;
@@ -899,7 +904,7 @@ async function submitAuth(mode) {
   }
 
   if (!apiBase) {
-    setStatus(authResult, 'Backend is not configured. Open Setup Window first.', 'error');
+    setStatus(authResult, 'Whiteout live sync is not configured yet.', 'error');
     setWindow('setup');
     return;
   }
@@ -1335,85 +1340,95 @@ windowTabs.forEach((tab) => {
   });
 });
 
-openSetupBtn.addEventListener('click', () => {
-  setWindow('setup');
-  apiBaseConfigInput.focus();
-});
+if (openSetupBtn) {
+  openSetupBtn.addEventListener('click', () => {
+    setWindow('setup');
+    if (partyCodeInput) partyCodeInput.focus();
+  });
+}
 
-setupBackBtn.addEventListener('click', () => {
-  setWindow('guest');
-  partyCodeInput.focus();
-});
+if (setupBackBtn) {
+  setupBackBtn.addEventListener('click', () => {
+    setWindow('guest');
+    if (partyCodeInput) partyCodeInput.focus();
+  });
+}
 
 stopCheckingBtn.addEventListener('click', () => {
   stopJoinPolling('Stopped checking. Tap Join to retry.');
 });
 
-apiBaseConfigForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
+if (apiBaseConfigForm && apiBaseConfigInput) {
+  apiBaseConfigForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
 
-  const candidate = normalizeApiBaseCandidate(apiBaseConfigInput.value);
-  if (!candidate) {
-    setStatus(apiBaseConfigStatus, 'Enter a valid http(s) API URL.', 'error');
-    return;
-  }
-
-  setButtonLoading(saveApiBaseBtn, true, 'Saving...', 'Save');
-
-  try {
-    setApiBase(candidate);
-    const ok = await checkBackendHealth();
-    if (ok) {
-      await refreshAuthIdentity();
-      setStatus(apiBaseConfigStatus, `Saved and connected: ${apiBase}`, 'success');
-      pushTimeline('success', `Backend API configured: ${apiBase}`);
-      if (activeWindow === 'setup') {
-        setWindow('guest');
-      }
+    const candidate = normalizeApiBaseCandidate(apiBaseConfigInput.value);
+    if (!candidate) {
+      setStatus(apiBaseConfigStatus, 'Enter a valid http(s) live sync URL.', 'error');
+      return;
     }
-  } finally {
-    setButtonLoading(saveApiBaseBtn, false, 'Saving...', 'Save');
-  }
-});
 
-testApiBaseBtn.addEventListener('click', async () => {
-  const candidate = normalizeApiBaseCandidate(apiBaseConfigInput.value);
-  if (!candidate) {
-    setStatus(apiBaseConfigStatus, 'Enter a valid http(s) API URL.', 'error');
-    return;
-  }
+    setButtonLoading(saveApiBaseBtn, true, 'Saving...', 'Save');
 
-  setButtonLoading(testApiBaseBtn, true, 'Testing...', 'Test');
+    try {
+      setApiBase(candidate);
+      const ok = await checkBackendHealth();
+      if (ok) {
+        await refreshAuthIdentity();
+        setStatus(apiBaseConfigStatus, `Saved and connected: ${apiBase}`, 'success');
+        pushTimeline('success', `Whiteout live sync configured: ${apiBase}`);
+        if (activeWindow === 'setup') {
+          setWindow('guest');
+        }
+      }
+    } finally {
+      setButtonLoading(saveApiBaseBtn, false, 'Saving...', 'Save');
+    }
+  });
+}
 
-  try {
-    await pingBackendHealth(candidate);
-    setStatus(apiBaseConfigStatus, `Reachable: ${candidate}`, 'success');
-    pushTimeline('info', `Backend test passed for ${candidate}`);
-  } catch (error) {
-    setStatus(apiBaseConfigStatus, error.message || 'Could not reach backend.', 'error');
-  } finally {
-    setButtonLoading(testApiBaseBtn, false, 'Testing...', 'Test');
-  }
-});
+if (testApiBaseBtn && apiBaseConfigInput) {
+  testApiBaseBtn.addEventListener('click', async () => {
+    const candidate = normalizeApiBaseCandidate(apiBaseConfigInput.value);
+    if (!candidate) {
+      setStatus(apiBaseConfigStatus, 'Enter a valid http(s) live sync URL.', 'error');
+      return;
+    }
 
-clearApiBaseBtn.addEventListener('click', () => {
-  setApiBase('');
-  authUser = null;
-  setAuthToken('');
-  setAuthUi();
-  hidePanel(requestSection);
-  stopJoinPolling();
-  activePartyCode = null;
-  guestRequestCount = 0;
-  guestLastRequest = '';
-  guestRecentRequests = [];
-  updateGuestSummary();
-  updateSystemStatus();
-  setStatus(apiBaseConfigStatus, 'API base cleared.', 'neutral');
-  setStatus(backendStatus, 'Backend not configured. Open Setup Window and set API Base URL.', 'error');
-  pushTimeline('warning', 'Backend API cleared from this browser.');
-  setWindow('setup');
-});
+    setButtonLoading(testApiBaseBtn, true, 'Testing...', 'Test');
+
+    try {
+      await pingBackendHealth(candidate);
+      setStatus(apiBaseConfigStatus, `Reachable: ${candidate}`, 'success');
+      pushTimeline('info', `Whiteout live sync test passed for ${candidate}`);
+    } catch (error) {
+      setStatus(apiBaseConfigStatus, error.message || 'Could not reach live sync.', 'error');
+    } finally {
+      setButtonLoading(testApiBaseBtn, false, 'Testing...', 'Test');
+    }
+  });
+}
+
+if (clearApiBaseBtn) {
+  clearApiBaseBtn.addEventListener('click', () => {
+    setApiBase('');
+    authUser = null;
+    setAuthToken('');
+    setAuthUi();
+    hidePanel(requestSection);
+    stopJoinPolling();
+    activePartyCode = null;
+    guestRequestCount = 0;
+    guestLastRequest = '';
+    guestRecentRequests = [];
+    updateGuestSummary();
+    updateSystemStatus();
+    setStatus(apiBaseConfigStatus, 'Live sync cleared.', 'neutral');
+    setStatus(backendStatus, 'Whiteout live sync is not configured yet.', 'error');
+    pushTimeline('warning', 'Whiteout live sync cleared from this browser.');
+    setWindow('setup');
+  });
+}
 
 partyCodeInput.addEventListener('input', () => {
   partyCodeInput.value = normalizePartyCode(partyCodeInput.value);

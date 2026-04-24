@@ -35,7 +35,7 @@
 
           <div class="hero-meta">
             <p id="backendStatus" class="status status-info" aria-live="polite">Checking live connection...</p>
-            <button id="openSetupBtn" class="btn btn-ghost" type="button">Connection Setup</button>
+            <button id="openSetupBtn" class="btn btn-ghost" type="button">Whiteout Mode</button>
           </div>
 
           <div class="flow-strip" aria-label="How it works">
@@ -59,25 +59,24 @@
           </div>
         </div>
 
-        <div class="poster-stack" aria-label="Whiteout posters">
-          <figure class="poster-card poster-card-main">
-            <img src="assets/poster-helmet.jpg" alt="Whiteout event poster" />
-          </figure>
-          <figure class="poster-card poster-card-top">
-            <img src="assets/poster-cash-open.jpg" alt="Whiteout promo poster" />
-          </figure>
-          <figure class="poster-card poster-card-bottom">
-            <img src="assets/poster-invite.jpg" alt="Whiteout invite poster" />
-          </figure>
+        <div class="brand-scene brand-scene-hero" aria-label="Whiteout branding">
+          <div class="brand-card brand-card-main">
+            <img class="brand-mark" src="assets/whiteout-mark.svg" alt="Whiteout helmet mark" />
+          </div>
+          <div class="brand-card brand-card-tag">WHITEOUT AFTER DARK</div>
+          <div class="brand-card brand-card-code">ALL WHITE. ALL NIGHT.</div>
+          <div class="brand-card brand-card-mini">REQUESTS LIVE</div>
+          <div class="brand-spray brand-spray-a"></div>
+          <div class="brand-spray brand-spray-b"></div>
         </div>
       </header>
 
       <nav class="window-tabs reveal delay-1" aria-label="Portal views">
         <button id="tabGuest" class="window-tab is-active" type="button" data-window="guest">Request</button>
         <button id="tabDj" class="window-tab" type="button" data-window="dj">Host</button>
-        <button id="tabSetup" class="window-tab" type="button" data-window="setup">Connect</button>
+        <button id="tabSetup" class="window-tab" type="button" data-window="setup">Live Mode</button>
         <button id="tabStatus" class="window-tab" type="button" data-window="status">Live State</button>
-        <button id="tabHelp" class="window-tab" type="button" data-window="help">Flyers</button>
+        <button id="tabHelp" class="window-tab" type="button" data-window="help">Guide</button>
       </nav>
 
       <section id="guestWindow" class="window-panel reveal delay-2" data-window="guest">
@@ -268,29 +267,22 @@
         <div class="panel-grid panel-grid-2">
           <article class="panel">
             <div class="panel-head">
-              <h2>Connect Whiteout</h2>
+              <h2>Whiteout Mode</h2>
               <div class="panel-head-actions">
                 <button id="setupBackBtn" class="btn btn-ghost btn-mini" type="button">Back</button>
-                <span class="chip">Required</span>
+                <span class="chip">Locked In</span>
               </div>
             </div>
             <p class="panel-copy">
-              Save the API base once and every Whiteout page on this device will know where the live backend lives.
+              Whiteout now runs on live sync by default. Guests scan the QR, land on the mobile request page, and the
+              booth app watches the same live room without any manual endpoint setup.
             </p>
-
-            <form id="apiBaseConfigForm" class="form-grid">
-              <label for="apiBaseConfig">API Base URL</label>
-              <input id="apiBaseConfig" placeholder="https://your-api.example.com" />
-
-              <div class="button-row button-row-3">
-                <button id="saveApiBaseBtn" class="btn btn-primary" type="submit">Save</button>
-                <button id="testApiBaseBtn" class="btn btn-secondary" type="button">Test</button>
-                <button id="clearApiBaseBtn" class="btn btn-ghost" type="button">Clear</button>
-              </div>
-            </form>
-
-            <p id="apiBaseConfigStatus" class="status status-neutral" aria-live="polite">No saved API base URL yet.</p>
-            <p class="micro-note">Current live endpoint: <span id="effectiveApiBase">Not configured</span></p>
+            <p class="status status-success" aria-live="polite">
+              Whiteout is configured for the live guest wall, real-time queue updates, and booth control.
+            </p>
+            <p class="micro-note">
+              The only things hosts need now are the room name, room code, DJ key, and the guest QR.
+            </p>
           </article>
 
           <article class="panel panel-dark">
@@ -300,12 +292,12 @@
             </div>
             <ol class="guide-list">
               <li>Open Host, sign in, and create a room.</li>
-              <li>Open Whiteout on the booth machine and enter API Base URL, room code, and DJ key.</li>
-              <li>Connect and throw the QR on screen.</li>
-              <li>Guests scan or join with the code and send tracks from their phones.</li>
+              <li>Open Whiteout on the booth machine, enter the room code and DJ key, then connect.</li>
+              <li>Throw the QR on screen and let guests hit the mobile request wall.</li>
+              <li>Guests can vote requests up or down while the DJ approves, plays, or rejects them live.</li>
             </ol>
             <p class="micro-note micro-note-invert">
-              Tip: Whiteout QR posters open the guest page with the room code already filled in.
+              Tip: the booth QR posters already open the guest page with the room code filled in.
             </p>
           </article>
         </div>
@@ -371,22 +363,24 @@
             <p class="micro-note">Always download the newest `.dmg` from Releases.</p>
           </article>
 
-          <article class="panel panel-posters">
+          <article class="panel panel-brand">
             <div class="panel-head">
               <h2>Brand Scene</h2>
               <span class="chip">Whiteout</span>
             </div>
 
-            <div class="poster-grid-mini">
-              <img src="assets/poster-cash-open.jpg" alt="Whiteout balloon poster" />
-              <img src="assets/poster-invite.jpg" alt="Whiteout invite poster" />
-              <img src="assets/poster-venues.jpg" alt="Whiteout venue poster" />
+            <div class="brand-grid-mini" aria-hidden="true">
+              <div class="brand-mini-card">
+                <img class="brand-mark" src="assets/whiteout-mark.svg" alt="" />
+              </div>
+              <div class="brand-mini-card brand-mini-text">SPRAY TAG ENERGY</div>
+              <div class="brand-mini-card brand-mini-text">PHONE FIRST</div>
             </div>
 
             <ul class="help-list">
               <li><strong>Room won’t join:</strong> verify the booth is connected before guests enter the code.</li>
               <li><strong>Search is missing tracks:</strong> Apple or your backend may be rate limited. Retry.</li>
-              <li><strong>Need to rewire the live site:</strong> open Connect and update the API base URL.</li>
+              <li><strong>Wall is not moving:</strong> refresh the guest page or reconnect the booth app.</li>
               <li><strong>Keep the DJ key private:</strong> only the booth app should receive it.</li>
             </ul>
           </article>

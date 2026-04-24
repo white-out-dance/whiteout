@@ -58,6 +58,8 @@ function readSupabaseConfig() {
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const ALLOWED_SERVICES = new Set(['Apple Music']);
+const FEED_POLL_MS = 3500;
+const GUEST_TOKEN_KEY = 'whiteout_guest_token_v1';
 
 const joinForm = document.getElementById('joinForm');
 const partyCodeInput = document.getElementById('partyCode');
@@ -68,6 +70,11 @@ const requestPanel = document.getElementById('requestPanel');
 const requestForm = document.getElementById('requestForm');
 const requestResult = document.getElementById('requestResult');
 const guestPartyName = document.getElementById('guestPartyName');
+const guestMyRequestCount = document.getElementById('guestMyRequestCount');
+const guestFeedCount = document.getElementById('guestFeedCount');
+const guestLastDecision = document.getElementById('guestLastDecision');
+const feedStatus = document.getElementById('feedStatus');
+const guestFeedList = document.getElementById('guestFeedList');
 
 const appleSearchSection = document.getElementById('appleSearchSection');
 const appleSearchTermInput = document.getElementById('appleSearchTerm');
@@ -75,21 +82,21 @@ const appleSearchBtn = document.getElementById('appleSearchBtn');
 const appleSearchStatus = document.getElementById('appleSearchStatus');
 const appleSearchResults = document.getElementById('appleSearchResults');
 
-// Search-only guest flow: no link paste / manual entry UI.
-const songUrlInput = null;
-
 const pickedSongPanel = document.getElementById('pickedSongPanel');
 const pickedSongTitle = document.getElementById('pickedSongTitle');
 const pickedSongArtist = document.getElementById('pickedSongArtist');
 const pickedChangeBtn = document.getElementById('pickedChangeBtn');
 const pickedSubmitBtn = document.getElementById('pickedSubmitBtn');
 
-let pickedSong = null;
-
 let apiBase = readInitialApiBase();
-let activePartyCode = null;
 let supabaseClient = null;
 let supabaseConfig = readSupabaseConfig();
+let activePartyCode = '';
+let activePartyName = '';
+let activeDjReady = false;
+let pickedSong = null;
+let guestFeed = [];
+let myRequestIds = new Set();
 
 let joinDebounceTimer = null;
 let joinInFlight = false;
@@ -98,6 +105,9 @@ let joinPollTimer = null;
 let joinPollCode = '';
 let joinPollInFlight = false;
 let joinPollAttempts = 0;
+let feedPollTimer = null;
+let feedPollInFlight = false;
+let feedVoteInFlight = false;
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -136,39 +146,67 @@ function hidePanel(panel) {
   panel.classList.remove('panel-pop');
 }
 
+function nowLabel(iso) {
+  const date = iso ? new Date(iso) : new Date();
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function readGuestToken() {
+  let token = String(window.localStorage.getItem(GUEST_TOKEN_KEY) || '').trim();
+  if (!token) {
+    token =
+      window.crypto && typeof window.crypto.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : `guest-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    window.localStorage.setItem(GUEST_TOKEN_KEY, token);
+  }
+  return token;
+}
+
+function myRequestStorageKey(code) {
+  const normalized = normalizePartyCode(code);
+  return PARTY_CODE_PATTERN.test(normalized) ? `whiteout_guest_requests_${normalized}` : '';
+}
+
+function loadMyRequestIds(code) {
+  const key = myRequestStorageKey(code);
+  if (!key) return new Set();
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || '[]');
+    const values = Array.isArray(parsed) ? parsed : [];
+    return new Set(values.map((value) => String(value || '').trim()).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveMyRequestIds(code) {
+  const key = myRequestStorageKey(code);
+  if (!key) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(Array.from(myRequestIds)));
+  } catch {
+    // ignore
+  }
+}
+
+function addMyRequestId(code, requestId) {
+  const id = String(requestId || '').trim();
+  if (!id) return;
+  myRequestIds.add(id);
+  saveMyRequestIds(code);
+}
+
 function makeAbortSignal(timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
-async function fetchJson(url, { timeoutMs = 9000 } = {}) {
-  const { signal, clear } = makeAbortSignal(timeoutMs);
-  try {
-    const res = await fetch(url, { method: 'GET', signal });
-    const text = await res.text();
-    let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = null;
-    }
-    if (!res.ok) {
-      const message = data?.error || data?.message || `Request failed (${res.status})`;
-      throw new Error(message);
-    }
-    return data;
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('Request timed out. Please retry.');
-    throw error;
-  } finally {
-    clear();
-  }
-}
-
 async function jsonp(urlInput, { timeoutMs = 9000, callbackParam = 'callback' } = {}) {
   const url = new URL(String(urlInput || '').trim());
-  const callbackName = `__pulse_jsonp_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+  const callbackName = `__whiteout_jsonp_${Math.random().toString(16).slice(2)}_${Date.now()}`;
   url.searchParams.set(callbackParam, callbackName);
 
   return await new Promise((resolve, reject) => {
@@ -208,26 +246,24 @@ async function jsonp(urlInput, { timeoutMs = 9000, callbackParam = 'callback' } 
   });
 }
 
-async function itunesSongSearch(term, limit = 8) {
+async function itunesSongSearch(term, limit = 10) {
   const q = String(term || '').trim();
   if (q.length < 2) return [];
 
-  // iTunes Search API via JSONP with retry + endpoint fallback for transient script-load failures.
   const queryParams = new URLSearchParams();
   queryParams.set('term', q);
   queryParams.set('media', 'music');
   queryParams.set('entity', 'song');
   queryParams.set('country', 'US');
-  queryParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 8))));
+  queryParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 10))));
 
   const endpoints = [
     `https://itunes.apple.com/search?${queryParams.toString()}`,
     `https://ax.itunes.apple.com/WebObjects/MZStoreServices.woa/ws/wsSearch?${queryParams.toString()}`
   ];
 
-  let lastError = null;
   let data = null;
-
+  let lastError = null;
   for (const endpoint of endpoints) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -236,7 +272,7 @@ async function itunesSongSearch(term, limit = 8) {
         break;
       } catch (error) {
         lastError = error;
-        await new Promise((resolve) => setTimeout(resolve, 240 * (attempt + 1)));
+        await new Promise((resolve) => setTimeout(resolve, 220 * (attempt + 1)));
       }
     }
     if (data) break;
@@ -246,33 +282,23 @@ async function itunesSongSearch(term, limit = 8) {
     throw lastError || new Error('Network error. Please retry.');
   }
 
-  const rows = Array.isArray(data?.results) ? data.results : [];
-
-  return rows
+  return (Array.isArray(data?.results) ? data.results : [])
     .map((row) => {
       const title = String(row?.trackName || '').trim();
       const artist = String(row?.artistName || '').trim();
       if (!title || !artist) return null;
-
-      const album = String(row?.collectionName || '').trim();
-      const url = String(row?.trackViewUrl || '').trim();
-      const artworkUrl = String(row?.artworkUrl100 || '').trim();
-
       return {
         title,
         artist,
-        album,
-        url,
-        artworkUrl
+        album: String(row?.collectionName || '').trim(),
+        url: String(row?.trackViewUrl || '').trim(),
+        artworkUrl: String(row?.artworkUrl100 || '').trim()
       };
     })
     .filter(Boolean);
 }
 
-async function searchMusic(service, term) {
-  if (String(service || '').trim() !== 'Apple Music') return [];
-
-  // Prefer Edge Function on mobile/browsers to avoid JSONP/script-blocker failures.
+async function searchMusic(term) {
   if (supabaseConfig?.url && supabaseConfig?.anonKey) {
     try {
       const fnBase = supabaseConfig.url.replace('.supabase.co', '.functions.supabase.co');
@@ -289,7 +315,6 @@ async function searchMusic(service, term) {
           body: JSON.stringify({ service: 'Apple Music', term, limit: 10 }),
           signal
         });
-
         const data = await res.json().catch(() => ({}));
         if (res.ok && Array.isArray(data?.results)) {
           return data.results;
@@ -298,7 +323,7 @@ async function searchMusic(service, term) {
         clear();
       }
     } catch {
-      // fallback to JSONP path below
+      // fall through to JSONP
     }
   }
 
@@ -307,11 +332,10 @@ async function searchMusic(service, term) {
 
 async function apiRequest(path, options = {}) {
   if (!apiBase) {
-    throw new Error('This request site is not connected yet. Ask the DJ to finish setup.');
+    throw new Error('Whiteout live sync is not configured.');
   }
 
   const { signal, clear } = makeAbortSignal(options.timeoutMs || 9000);
-
   try {
     const headers = {
       'Content-Type': 'application/json',
@@ -327,13 +351,11 @@ async function apiRequest(path, options = {}) {
 
     const contentType = res.headers.get('content-type') || '';
     const data = contentType.includes('application/json') ? await res.json() : {};
-
     if (!res.ok) {
       const error = new Error(data.error || `Request failed (${res.status})`);
       error.status = res.status;
       throw error;
     }
-
     return data;
   } catch (error) {
     if (error.name === 'AbortError') {
@@ -354,13 +376,10 @@ function initSupabase() {
   supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
     auth: { persistSession: false }
   });
-
   return supabaseClient;
 }
 
 async function supaJoinParty(code) {
-  if (!supabaseClient) throw new Error('Supabase not initialized');
-
   const { data, error } = await supabaseClient.rpc('join_party', { p_code: code });
   if (error) throw new Error(error.message || 'Join failed');
 
@@ -376,8 +395,6 @@ async function supaJoinParty(code) {
 }
 
 async function supaSubmitRequest(code, payload) {
-  if (!supabaseClient) throw new Error('Supabase not initialized');
-
   const { data, error } = await supabaseClient.rpc('submit_request', {
     p_code: code,
     p_service: payload.service,
@@ -388,7 +405,6 @@ async function supaSubmitRequest(code, payload) {
   });
 
   if (error) throw new Error(error.message || 'Request failed');
-
   const row = Array.isArray(data) ? data[0] : data;
   if (!row?.id) throw new Error('Request failed');
 
@@ -398,62 +414,259 @@ async function supaSubmitRequest(code, payload) {
     title: row.title,
     artist: row.artist,
     service: row.service,
-    songUrl: row.song_url || ''
+    songUrl: row.song_url || '',
+    createdAt: row.created_at || new Date().toISOString()
   };
 }
 
-function makeIdempotencyKey() {
-  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-    return window.crypto.randomUUID();
+async function supaFeed(code) {
+  const { data, error } = await supabaseClient.rpc('guest_list_requests', {
+    p_code: code,
+    p_guest_token: readGuestToken()
+  });
+
+  if (error) throw new Error(error.message || 'Could not load the crowd wall');
+  return {
+    partyCode: code,
+    requests: Array.isArray(data) ? data : []
+  };
+}
+
+async function supaVote(code, requestId, value) {
+  const { error } = await supabaseClient.rpc('guest_vote_request', {
+    p_code: code,
+    p_request_id: requestId,
+    p_guest_token: readGuestToken(),
+    p_value: value
+  });
+  if (error) throw new Error(error.message || 'Vote failed');
+}
+
+function sanitizeFeedEntry(entry) {
+  const id = String(entry?.id || '').trim();
+  if (!id) return null;
+
+  const statusRaw = String(entry?.status || 'queued').trim().toLowerCase();
+  const status =
+    statusRaw === 'played'
+      ? 'played'
+      : statusRaw === 'rejected'
+        ? 'rejected'
+        : statusRaw === 'approved'
+          ? 'approved'
+          : 'queued';
+
+  return {
+    id,
+    seqNo: Number(entry?.seqNo ?? entry?.seq_no) || 0,
+    title: String(entry?.title || 'Untitled').trim() || 'Untitled',
+    artist: String(entry?.artist || 'Unknown').trim() || 'Unknown',
+    service: String(entry?.service || 'Apple Music').trim() || 'Apple Music',
+    status,
+    playedAt: String(entry?.playedAt || entry?.played_at || '').trim(),
+    playedBy: String(entry?.playedBy || entry?.played_by || '').trim(),
+    createdAt: String(entry?.createdAt || entry?.created_at || new Date().toISOString()).trim(),
+    upvotes: Math.max(0, Math.floor(Number(entry?.upvotes ?? 0) || 0)),
+    downvotes: Math.max(0, Math.floor(Number(entry?.downvotes ?? 0) || 0)),
+    score: Math.trunc(Number(entry?.score ?? 0) || 0),
+    myVote: Math.trunc(Number(entry?.myVote ?? entry?.my_vote ?? 0) || 0)
+  };
+}
+
+function statusLabel(status) {
+  if (status === 'approved') return 'DJ approved';
+  if (status === 'played') return 'Played';
+  if (status === 'rejected') return 'Rejected';
+  return 'In wall';
+}
+
+function statusRank(status) {
+  if (status === 'approved') return 0;
+  if (status === 'queued') return 1;
+  if (status === 'played') return 2;
+  return 3;
+}
+
+function updateSummary() {
+  const mine = guestFeed.filter((entry) => myRequestIds.has(entry.id));
+  if (guestMyRequestCount) guestMyRequestCount.textContent = String(mine.length);
+  if (guestFeedCount) guestFeedCount.textContent = String(guestFeed.length);
+  if (guestPartyName) {
+    guestPartyName.textContent = activePartyName ? activePartyName : activePartyCode ? `Room ${activePartyCode}` : '';
   }
-  return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const latestMine = mine
+    .slice()
+    .sort((a, b) => new Date(b.playedAt || b.createdAt).getTime() - new Date(a.playedAt || a.createdAt).getTime())[0];
+
+  if (!activePartyCode) {
+    guestLastDecision.textContent = 'Join a room to watch the live wall.';
+  } else if (!mine.length) {
+    guestLastDecision.textContent = 'You have not sent a track yet. Pick one and get on the wall.';
+  } else if (latestMine.status === 'approved') {
+    guestLastDecision.textContent = `DJ locked in "${latestMine.title}" by ${latestMine.artist}.`;
+  } else if (latestMine.status === 'played') {
+    guestLastDecision.textContent = `"${latestMine.title}" by ${latestMine.artist} has been played.`;
+  } else if (latestMine.status === 'rejected') {
+    guestLastDecision.textContent = `"${latestMine.title}" by ${latestMine.artist} was passed on.`;
+  } else {
+    guestLastDecision.textContent = `"${latestMine.title}" by ${latestMine.artist} is still live on the wall.`;
+  }
 }
 
-function readSelectedService() {
-  return 'Apple Music';
+function renderFeed() {
+  if (!guestFeedList) return;
+  guestFeedList.textContent = '';
+
+  if (!guestFeed.length) {
+    const empty = document.createElement('p');
+    empty.className = 'micro-note';
+    empty.textContent = activePartyCode
+      ? 'No requests on the wall yet. Be the first one in.'
+      : 'Join a room to see what everyone is requesting.';
+    guestFeedList.appendChild(empty);
+    updateSummary();
+    return;
+  }
+
+  const sorted = guestFeed
+    .slice()
+    .sort((a, b) => {
+      const rank = statusRank(a.status) - statusRank(b.status);
+      if (rank !== 0) return rank;
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.seqNo !== a.seqNo) return b.seqNo - a.seqNo;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+  for (const entry of sorted) {
+    const card = document.createElement('article');
+    card.className = `feed-card feed-${entry.status}`;
+    if (myRequestIds.has(entry.id)) {
+      card.classList.add('is-own');
+    }
+
+    const top = document.createElement('div');
+    top.className = 'feed-card-top';
+
+    const seq = document.createElement('span');
+    seq.className = 'feed-seq';
+    seq.textContent = entry.seqNo > 0 ? `#${entry.seqNo}` : '#?';
+
+    const badge = document.createElement('span');
+    badge.className = `feed-badge feed-badge-status-${entry.status}`;
+    badge.textContent = statusLabel(entry.status);
+
+    top.append(seq, badge);
+
+    const title = document.createElement('p');
+    title.className = 'feed-title';
+    title.textContent = entry.title;
+
+    const artist = document.createElement('p');
+    artist.className = 'feed-sub';
+    artist.textContent = entry.artist;
+
+    const meta = document.createElement('p');
+    meta.className = 'feed-note';
+    meta.textContent = `${entry.service} • ${myRequestIds.has(entry.id) ? 'Your request • ' : ''}${nowLabel(entry.playedAt || entry.createdAt)}`;
+
+    const voteRow = document.createElement('div');
+    voteRow.className = 'feed-votes';
+
+    const upvoteBtn = document.createElement('button');
+    upvoteBtn.type = 'button';
+    upvoteBtn.className = `vote-btn ${entry.myVote === 1 ? 'is-active' : ''}`;
+    upvoteBtn.textContent = `▲ ${entry.upvotes}`;
+    upvoteBtn.disabled = !activePartyCode || feedVoteInFlight || entry.status === 'played' || entry.status === 'rejected';
+    upvoteBtn.addEventListener('click', () => handleVote(entry, 1));
+
+    const score = document.createElement('span');
+    score.className = 'vote-score';
+    score.textContent = entry.score > 0 ? `+${entry.score}` : String(entry.score);
+
+    const downvoteBtn = document.createElement('button');
+    downvoteBtn.type = 'button';
+    downvoteBtn.className = `vote-btn ${entry.myVote === -1 ? 'is-active is-negative' : 'is-negative'}`;
+    downvoteBtn.textContent = `▼ ${entry.downvotes}`;
+    downvoteBtn.disabled = !activePartyCode || feedVoteInFlight || entry.status === 'played' || entry.status === 'rejected';
+    downvoteBtn.addEventListener('click', () => handleVote(entry, -1));
+
+    voteRow.append(upvoteBtn, score, downvoteBtn);
+    card.append(top, title, artist, meta, voteRow);
+    guestFeedList.appendChild(card);
+  }
+
+  updateSummary();
 }
 
-function hostnameMatches(hostnameInput, allowedHostInput) {
-  const hostname = String(hostnameInput || '').toLowerCase();
-  const allowedHost = String(allowedHostInput || '').toLowerCase();
-  if (!hostname || !allowedHost) return false;
-  if (hostname === allowedHost) return true;
-  return hostname.endsWith(`.${allowedHost}`);
+function stopFeedPolling() {
+  if (feedPollTimer) {
+    clearInterval(feedPollTimer);
+    feedPollTimer = null;
+  }
+  feedPollInFlight = false;
 }
 
-function isValidSongUrl(urlText, service) {
-  if (!urlText) return false;
+async function refreshFeed({ silent = false } = {}) {
+  if (!activePartyCode || feedPollInFlight) return;
+  feedPollInFlight = true;
 
-  let parsed;
+  if (!silent) {
+    setStatus(feedStatus, 'Refreshing the crowd wall...', 'info');
+  }
+
   try {
-    parsed = new URL(urlText);
-  } catch {
-    return false;
+    const payload = supabaseClient
+      ? await supaFeed(activePartyCode)
+      : await apiRequest(`/api/parties/${activePartyCode}/feed?guestToken=${encodeURIComponent(readGuestToken())}`);
+
+    guestFeed = (Array.isArray(payload?.requests) ? payload.requests : []).map(sanitizeFeedEntry).filter(Boolean);
+    renderFeed();
+    setStatus(feedStatus, activeDjReady ? 'Live wall synced.' : 'Room found. Waiting for the DJ to go live.', activeDjReady ? 'success' : 'info');
+  } catch (error) {
+    if (!silent) {
+      setStatus(feedStatus, error.message || 'Could not load the crowd wall.', 'error');
+    }
+  } finally {
+    feedPollInFlight = false;
   }
+}
 
-  if (parsed.protocol !== 'https:') return false;
-  const hostname = parsed.hostname;
+function startFeedPolling() {
+  stopFeedPolling();
+  if (!activePartyCode) return;
+  refreshFeed({ silent: false });
+  feedPollTimer = setInterval(() => {
+    refreshFeed({ silent: true });
+  }, FEED_POLL_MS);
+}
 
-  if (service === 'Apple Music') {
-    return hostnameMatches(hostname, 'music.apple.com');
+async function handleVote(entry, requestedValue) {
+  if (!activePartyCode || feedVoteInFlight) return;
+  feedVoteInFlight = true;
+  const nextValue = entry.myVote === requestedValue ? 0 : requestedValue;
+  setStatus(feedStatus, nextValue === 0 ? 'Removing your vote...' : 'Saving your vote...', 'info');
+
+  try {
+    if (supabaseClient) {
+      await supaVote(activePartyCode, entry.id, nextValue);
+    } else {
+      await apiRequest(`/api/parties/${activePartyCode}/requests/${entry.id}/vote`, {
+        method: 'POST',
+        body: {
+          guestToken: readGuestToken(),
+          value: nextValue
+        }
+      });
+    }
+
+    await refreshFeed({ silent: false });
+  } catch (error) {
+    setStatus(feedStatus, error.message || 'Could not save your vote.', 'error');
+  } finally {
+    feedVoteInFlight = false;
   }
-
-  return false;
-}
-
-function serviceIsAppleMusic() {
-  return readSelectedService() === 'Apple Music';
-}
-
-function toggleAppleSearchVisibility() {
-  if (!appleSearchSection) return;
-
-  // Search is always available (Apple Music only).
-  appleSearchSection.classList.remove('hidden');
-}
-
-function updateSongUrlUi() {
-  // No-op (no manual link flow).
 }
 
 function stopJoinPolling(message) {
@@ -465,85 +678,20 @@ function stopJoinPolling(message) {
   joinPollCode = '';
   joinPollAttempts = 0;
   joinPollInFlight = false;
-
   if (stopCheckingBtn) stopCheckingBtn.classList.add('hidden');
   if (message) setStatus(joinResult, message, 'neutral');
 }
 
+function setActiveParty(code, partyName, djActive) {
+  activePartyCode = code;
+  activePartyName = String(partyName || '').trim();
+  activeDjReady = Boolean(djActive);
+  myRequestIds = loadMyRequestIds(code);
+  updateSummary();
+  startFeedPolling();
+}
+
 function startJoinPolling(code) {
-  pollJoinStatus(code);
-}
-
-async function joinPartyByCode(code) {
-  if (!PARTY_CODE_PATTERN.test(code)) {
-    setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
-    hidePanel(requestPanel);
-    activePartyCode = null;
-    if (guestPartyName) guestPartyName.textContent = '';
-    return false;
-  }
-
-  setStatus(joinResult, `Checking party ${code}...`, 'info');
-
-  try {
-    const data = supabaseClient
-      ? await supaJoinParty(code)
-      : await apiRequest(`/api/parties/${code}/join`, { method: 'POST' });
-
-    const partyName = String(data?.partyName || '').trim();
-    if (guestPartyName) {
-      guestPartyName.textContent = partyName ? `Party: ${partyName}` : '';
-    }
-
-    if (!data.djActive) {
-      activePartyCode = null;
-      hidePanel(requestPanel);
-      setStatus(joinResult, 'Party found. Waiting for DJ to connect...', 'info');
-      startJoinPolling(code);
-      return false;
-    }
-
-    stopJoinPolling();
-    activePartyCode = code;
-    revealPanel(requestPanel);
-    setStatus(joinResult, `Connected to party ${code}${partyName ? `: ${partyName}` : ''}. You can send requests now.`, 'success');
-    if (appleSearchTermInput) appleSearchTermInput.focus();
-    return true;
-  } catch (error) {
-    activePartyCode = null;
-    hidePanel(requestPanel);
-    stopJoinPolling();
-    setStatus(joinResult, error.message || 'Unable to join party.', 'error');
-    if (guestPartyName) guestPartyName.textContent = '';
-    return false;
-  }
-}
-
-function scheduleAutoJoin(code) {
-  if (joinDebounceTimer) {
-    clearTimeout(joinDebounceTimer);
-  }
-
-  const normalized = normalizePartyCode(code);
-  if (!apiBase) return;
-  if (!PARTY_CODE_PATTERN.test(normalized)) return;
-  if (normalized === activePartyCode) return;
-  if (normalized === lastAutoJoinCode) return;
-
-  joinDebounceTimer = setTimeout(async () => {
-    if (joinInFlight) return;
-    joinInFlight = true;
-    lastAutoJoinCode = normalized;
-
-    try {
-      await joinPartyByCode(normalized);
-    } finally {
-      joinInFlight = false;
-    }
-  }, 450);
-}
-
-async function pollJoinStatus(code) {
   const maxAttempts = 60;
   const intervalMs = 2000;
 
@@ -551,7 +699,6 @@ async function pollJoinStatus(code) {
   joinPollCode = code;
   joinPollAttempts = 0;
   joinPollInFlight = false;
-
   if (stopCheckingBtn) stopCheckingBtn.classList.remove('hidden');
 
   joinPollTimer = setInterval(async () => {
@@ -564,32 +711,97 @@ async function pollJoinStatus(code) {
         ? await supaJoinParty(code)
         : await apiRequest(`/api/parties/${code}/join`, { method: 'POST', timeoutMs: 8000 });
 
-      const partyName = String(data?.partyName || '').trim();
-      if (guestPartyName) {
-        guestPartyName.textContent = partyName ? `Party: ${partyName}` : '';
-      }
-
+      setActiveParty(code, data?.partyName || '', Boolean(data?.djActive));
       if (data.djActive) {
         stopJoinPolling();
-        activePartyCode = code;
         revealPanel(requestPanel);
-        setStatus(joinResult, `DJ is live. Connected to party ${code}${partyName ? `: ${partyName}` : ''}.`, 'success');
-        if (appleSearchTermInput) appleSearchTermInput.focus();
+        setStatus(joinResult, `DJ is live. You are in ${code}${activePartyName ? `: ${activePartyName}` : ''}.`, 'success');
+        setStatus(feedStatus, 'Live wall synced.', 'success');
         return;
       }
 
       if (joinPollAttempts >= maxAttempts) {
-        stopJoinPolling('Still waiting for DJ. Please ask the DJ to open the DJ app.');
+        stopJoinPolling('Still waiting for the DJ to go live.');
         return;
       }
 
-      setStatus(joinResult, `Waiting for DJ to connect... (${joinPollAttempts}/${maxAttempts})`, 'info');
+      setStatus(joinResult, `Room found. Waiting for DJ... (${joinPollAttempts}/${maxAttempts})`, 'info');
+      setStatus(feedStatus, 'Room found. Waiting for the DJ to go live.', 'info');
     } catch (error) {
-      stopJoinPolling(error.message || 'Could not check DJ status.');
+      stopJoinPolling(error.message || 'Could not check room status.');
     } finally {
       joinPollInFlight = false;
     }
   }, intervalMs);
+}
+
+async function joinPartyByCode(codeInput) {
+  const code = normalizePartyCode(codeInput);
+  if (!PARTY_CODE_PATTERN.test(code)) {
+    setStatus(joinResult, 'Room code must be 6 letters or numbers.', 'error');
+    setStatus(feedStatus, 'Enter a valid room code to load the crowd wall.', 'neutral');
+    activePartyCode = '';
+    activePartyName = '';
+    activeDjReady = false;
+    stopFeedPolling();
+    hidePanel(requestPanel);
+    updateSummary();
+    return false;
+  }
+
+  setStatus(joinResult, `Checking room ${code}...`, 'info');
+
+  try {
+    const data = supabaseClient
+      ? await supaJoinParty(code)
+      : await apiRequest(`/api/parties/${code}/join`, { method: 'POST' });
+
+    setActiveParty(code, data?.partyName || '', Boolean(data?.djActive));
+
+    if (!data.djActive) {
+      hidePanel(requestPanel);
+      setStatus(joinResult, 'Room found. Waiting for the DJ to go live...', 'info');
+      setStatus(feedStatus, 'Room found. The crowd wall is live. Requests unlock when the DJ connects.', 'info');
+      startJoinPolling(code);
+      return false;
+    }
+
+    stopJoinPolling();
+    revealPanel(requestPanel);
+    setStatus(joinResult, `Connected to ${code}${activePartyName ? `: ${activePartyName}` : ''}.`, 'success');
+    setStatus(feedStatus, 'Live wall synced.', 'success');
+    if (appleSearchTermInput) appleSearchTermInput.focus();
+    return true;
+  } catch (error) {
+    activePartyCode = '';
+    activePartyName = '';
+    activeDjReady = false;
+    stopFeedPolling();
+    hidePanel(requestPanel);
+    stopJoinPolling();
+    updateSummary();
+    setStatus(joinResult, error.message || 'Unable to join this room.', 'error');
+    setStatus(feedStatus, 'Could not load the crowd wall.', 'error');
+    return false;
+  }
+}
+
+function scheduleAutoJoin(codeInput) {
+  const normalized = normalizePartyCode(codeInput);
+  if (!PARTY_CODE_PATTERN.test(normalized)) return;
+  if (normalized === activePartyCode || normalized === lastAutoJoinCode) return;
+
+  if (joinDebounceTimer) clearTimeout(joinDebounceTimer);
+  joinDebounceTimer = setTimeout(async () => {
+    if (joinInFlight) return;
+    joinInFlight = true;
+    lastAutoJoinCode = normalized;
+    try {
+      await joinPartyByCode(normalized);
+    } finally {
+      joinInFlight = false;
+    }
+  }, 420);
 }
 
 function fillRequestFieldsFromSearchResult(result) {
@@ -597,27 +809,23 @@ function fillRequestFieldsFromSearchResult(result) {
   const artistInput = document.getElementById('artist');
   if (titleInput) titleInput.value = result.title || '';
   if (artistInput) artistInput.value = result.artist || '';
+
   pickedSong = {
-    service: readSelectedService(),
+    service: 'Apple Music',
     title: String(result.title || '').trim(),
     artist: String(result.artist || '').trim(),
     songUrl: String(result.url || '').trim()
   };
 
-  if (pickedSongTitle) pickedSongTitle.textContent = pickedSong.title || 'Selected song';
-  if (pickedSongArtist) pickedSongArtist.textContent = pickedSong.artist ? `by ${pickedSong.artist}` : '';
-  if (pickedSongPanel) pickedSongPanel.classList.remove('hidden');
-
-  // Once a song is picked, clear the search input and results to reduce confusion.
-  // Guests can type again to bring results back.
-  if (appleSearchTermInput) appleSearchTermInput.value = '';
-  if (appleSearchResults) appleSearchResults.textContent = '';
-  // Keep the search area focused on search feedback; the selected card is the confirmation.
-  setStatus(appleSearchStatus, 'Song selected. Tap Submit to send it to the DJ.', 'success');
+  pickedSongTitle.textContent = pickedSong.title || 'Selected song';
+  pickedSongArtist.textContent = pickedSong.artist ? `by ${pickedSong.artist}` : '';
+  pickedSongPanel.classList.remove('hidden');
+  appleSearchResults.textContent = '';
+  appleSearchTermInput.value = '';
+  setStatus(appleSearchStatus, 'Song selected. Tap Send Request.', 'success');
 }
 
 function renderAppleSearchResults(items) {
-  if (!appleSearchResults) return;
   appleSearchResults.textContent = '';
 
   if (!items.length) {
@@ -658,15 +866,12 @@ function renderAppleSearchResults(items) {
     sub.textContent = `${item.artist || 'Unknown artist'}${item.album ? ` • ${item.album}` : ''}`;
 
     meta.append(title, sub);
-
     card.append(image, meta);
     appleSearchResults.appendChild(card);
   }
 }
 
 async function runAppleMusicSearch() {
-  const service = readSelectedService();
-
   const term = String(appleSearchTermInput?.value || '').trim();
   if (term.length < 2) {
     setStatus(appleSearchStatus, 'Type at least 2 characters to search.', 'error');
@@ -674,38 +879,41 @@ async function runAppleMusicSearch() {
   }
 
   setButtonLoading(appleSearchBtn, true, 'Searching...', 'Search');
-  setStatus(appleSearchStatus, `Searching ${service}...`, 'info');
+  setStatus(appleSearchStatus, 'Searching Apple Music...', 'info');
 
   try {
-    const results = await searchMusic(service, term);
+    const results = await searchMusic(term);
     renderAppleSearchResults(results);
-
-    if (results.length) {
-      setStatus(appleSearchStatus, `Found ${results.length} results. Tap a song to select it.`, 'success');
-    } else {
-      setStatus(
-        appleSearchStatus,
-        service === 'Apple Music'
-          ? 'No results. Try another search.'
-          : `No results yet. DJ must enable ${service} search (Edge Function). Or paste a ${service} link in Advanced.`,
-        'neutral'
-      );
-    }
+    setStatus(appleSearchStatus, results.length ? `Found ${results.length} tracks. Tap one to send it.` : 'No results. Try another search.', results.length ? 'success' : 'neutral');
   } catch (error) {
-    const message = String(error?.message || 'Apple Music search failed.');
-    if (message.toLowerCase().includes('network error')) {
-      setStatus(appleSearchStatus, 'Network error. Retry search. If it persists, disable ad/script blockers.', 'error');
-    } else {
-      setStatus(appleSearchStatus, message, 'error');
-    }
+    setStatus(appleSearchStatus, error.message || 'Search failed.', 'error');
   } finally {
     setButtonLoading(appleSearchBtn, false, 'Searching...', 'Search');
   }
 }
 
-async function submitSongRequest(input, options = {}) {
+function makeIdempotencyKey() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function isValidSongUrl(urlText, service) {
+  if (!urlText) return false;
+  if (!ALLOWED_SERVICES.has(service)) return false;
+
+  try {
+    const parsed = new URL(urlText);
+    return parsed.protocol === 'https:' && parsed.hostname.endsWith('music.apple.com');
+  } catch {
+    return false;
+  }
+}
+
+async function submitSongRequest(input) {
   if (!activePartyCode) {
-    setStatus(requestResult, 'Join a live party first.', 'error');
+    setStatus(requestResult, 'Join a live room first.', 'error');
     return false;
   }
 
@@ -719,88 +927,60 @@ async function submitSongRequest(input, options = {}) {
     return false;
   }
 
-  if (!title || title.length > 120) {
-    setStatus(requestResult, 'Song title is required (max 120 chars).', 'error');
-    return false;
-  }
-
-  if (!artist || artist.length > 120) {
-    setStatus(requestResult, 'Artist is required (max 120 chars).', 'error');
+  if (!title || !artist) {
+    setStatus(requestResult, 'Song title and artist are required.', 'error');
     return false;
   }
 
   if (!isValidSongUrl(songUrl, service)) {
-    setStatus(requestResult, 'Song URL must be a valid HTTPS link for the selected service.', 'error');
+    setStatus(requestResult, 'Pick a valid Apple Music result first.', 'error');
     return false;
   }
 
-  const submitButton = requestForm?.querySelector('button[type="submit"]');
-  if (options.loading !== false) {
-    setButtonLoading(submitButton, true, 'Submitting...', 'Submit Request');
-  }
-  setStatus(requestResult, 'Submitting request to DJ queue...', 'info');
+  setButtonLoading(pickedSubmitBtn, true, 'Sending...', 'Send Request');
+  setStatus(requestResult, 'Sending your request to the booth...', 'info');
 
   try {
     const idempotencyKey = makeIdempotencyKey();
-
     const data = supabaseClient
       ? await supaSubmitRequest(activePartyCode, { service, title, artist, songUrl, idempotencyKey })
       : await apiRequest(`/api/parties/${activePartyCode}/requests`, {
           method: 'POST',
-          headers: {
-            'X-Idempotency-Key': idempotencyKey
-          },
-          body: {
-            service,
-            title,
-            artist,
-            songUrl
-          }
+          headers: { 'X-Idempotency-Key': idempotencyKey },
+          body: { service, title, artist, songUrl }
         });
 
-    const seqNo = data.seqNo ?? data.seq_no;
-    setStatus(requestResult, `Queued #${seqNo}: ${data.title} - ${data.artist}`, 'success');
-    setStatus(appleSearchStatus, 'Request sent to the DJ.', 'success');
-
+    addMyRequestId(activePartyCode, data.id);
     pickedSong = null;
-    if (pickedSongPanel) pickedSongPanel.classList.add('hidden');
-
-    const titleInput = document.getElementById('title');
-    const artistInput = document.getElementById('artist');
-    if (titleInput) titleInput.value = '';
-    if (artistInput) artistInput.value = '';
-    if (appleSearchTermInput) appleSearchTermInput.value = '';
-    if (appleSearchResults) appleSearchResults.textContent = '';
-    toggleAppleSearchVisibility();
-    updateSongUrlUi();
-
+    pickedSongPanel.classList.add('hidden');
+    appleSearchResults.textContent = '';
+    appleSearchTermInput.value = '';
+    setStatus(requestResult, `Queued #${data.seqNo}: ${data.title} - ${data.artist}`, 'success');
+    setStatus(appleSearchStatus, 'Request sent to the DJ.', 'success');
+    await refreshFeed({ silent: false });
     return true;
   } catch (error) {
     if (error.status === 409) {
       hidePanel(requestPanel);
-      activePartyCode = null;
-      setStatus(joinResult, 'DJ is not active right now. Waiting for DJ to connect...', 'info');
-      startJoinPolling(joinPollCode || normalizePartyCode(partyCodeInput.value));
+      activeDjReady = false;
+      setStatus(joinResult, 'DJ is not active right now. Waiting for the DJ to reconnect...', 'info');
+      startJoinPolling(activePartyCode || normalizePartyCode(partyCodeInput.value));
     }
 
     setStatus(requestResult, error.message || 'Request failed.', 'error');
     return false;
   } finally {
-    if (options.loading !== false) {
-      setButtonLoading(submitButton, false, 'Submitting...', 'Submit Request');
-    }
+    setButtonLoading(pickedSubmitBtn, false, 'Sending...', 'Send Request');
   }
 }
 
 function readPartyCodeFromUrl() {
   const params = new URLSearchParams(window.location.search || '');
-  const fromParam = params.get('partyCode') || params.get('code');
-  return normalizePartyCode(fromParam);
+  return normalizePartyCode(params.get('partyCode') || params.get('code'));
 }
 
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-
   const code = normalizePartyCode(partyCodeInput.value);
   lastAutoJoinCode = code;
   await joinPartyByCode(code);
@@ -812,32 +992,33 @@ partyCodeInput.addEventListener('input', () => {
 
   const normalized = normalizePartyCode(partyCodeInput.value);
   if (activePartyCode && normalized !== activePartyCode) {
-    activePartyCode = null;
+    activePartyCode = '';
+    activePartyName = '';
+    activeDjReady = false;
+    stopFeedPolling();
+    guestFeed = [];
+    myRequestIds = new Set();
     hidePanel(requestPanel);
-    setStatus(joinResult, 'Party code changed. Tap Join to connect.', 'neutral');
+    renderFeed();
+    setStatus(joinResult, 'Room code changed. Tap Join to reconnect.', 'neutral');
+    setStatus(feedStatus, 'Enter the new room code to load the crowd wall.', 'neutral');
   }
 
   scheduleAutoJoin(normalized);
 });
 
 stopCheckingBtn.addEventListener('click', () => {
-  stopJoinPolling('Stopped checking. Tap Join to retry.');
+  stopJoinPolling('Stopped checking. Tap Join to try again.');
 });
 
 requestForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-
   if (!pickedSong) {
-    setStatus(requestResult, 'Tap a song from the results first.', 'error');
+    setStatus(requestResult, 'Pick a song from the results first.', 'error');
     return;
   }
 
-  await submitSongRequest({
-    service: pickedSong.service,
-    title: pickedSong.title,
-    artist: pickedSong.artist,
-    songUrl: pickedSong.songUrl
-  });
+  await submitSongRequest(pickedSong);
 });
 
 if (appleSearchBtn) {
@@ -853,9 +1034,7 @@ appleSearchTermInput.addEventListener('keydown', (event) => {
 
 let appleTypeaheadTimer = null;
 let appleTypeaheadLast = '';
-
 appleSearchTermInput.addEventListener('input', () => {
-  if (!serviceIsAppleMusic()) return;
   const term = String(appleSearchTermInput.value || '').trim();
   if (term === appleTypeaheadLast) return;
   appleTypeaheadLast = term;
@@ -865,50 +1044,43 @@ appleSearchTermInput.addEventListener('input', () => {
     if (String(appleSearchTermInput.value || '').trim().length >= 2) {
       runAppleMusicSearch();
     } else {
-      if (appleSearchResults) appleSearchResults.textContent = '';
+      appleSearchResults.textContent = '';
       setStatus(appleSearchStatus, 'Type at least 2 characters to search.', 'neutral');
     }
-  }, 250);
+  }, 240);
 });
-
-toggleAppleSearchVisibility();
-updateSongUrlUi();
 
 if (pickedChangeBtn) {
   pickedChangeBtn.addEventListener('click', () => {
     pickedSong = null;
-    if (pickedSongPanel) pickedSongPanel.classList.add('hidden');
+    pickedSongPanel.classList.add('hidden');
     setStatus(requestResult, 'Pick a song from the results.', 'neutral');
-    if (appleSearchTermInput) appleSearchTermInput.focus();
+    appleSearchTermInput.focus();
   });
 }
 
 if (pickedSubmitBtn) {
   pickedSubmitBtn.addEventListener('click', async () => {
     if (!pickedSong) {
-      setStatus(requestResult, 'Tap a song from the results first.', 'error');
+      setStatus(requestResult, 'Pick a song from the results first.', 'error');
       return;
     }
-
-    await submitSongRequest({
-      service: pickedSong.service,
-      title: pickedSong.title,
-      artist: pickedSong.artist,
-      songUrl: pickedSong.songUrl
-    });
+    await submitSongRequest(pickedSong);
   });
 }
 
 initSupabase();
+renderFeed();
 
 if (!supabaseClient && !apiBase) {
-  setStatus(joinResult, 'This request site is not connected yet. Ask the DJ to finish setup.', 'error');
+  setStatus(joinResult, 'Whiteout live sync is not configured yet.', 'error');
+  setStatus(feedStatus, 'Whiteout live sync is not configured yet.', 'error');
 }
 
 const codeFromUrl = readPartyCodeFromUrl();
 if (PARTY_CODE_PATTERN.test(codeFromUrl)) {
   partyCodeInput.value = codeFromUrl;
-  setStatus(joinResult, `Party code ${codeFromUrl} loaded. Checking now...`, 'info');
+  setStatus(joinResult, `Room code ${codeFromUrl} loaded. Checking now...`, 'info');
   lastAutoJoinCode = codeFromUrl;
   joinPartyByCode(codeFromUrl);
 }

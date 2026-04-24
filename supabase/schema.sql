@@ -60,6 +60,20 @@ create table if not exists public.song_requests (
 create index if not exists song_requests_party_created_idx on public.song_requests(party_id, created_at);
 create index if not exists song_requests_party_status_seq_idx on public.song_requests(party_id, status, seq_no);
 
+create table if not exists public.request_votes (
+  id uuid primary key default extensions.gen_random_uuid(),
+  party_id uuid not null references public.parties(id) on delete cascade,
+  request_id uuid not null references public.song_requests(id) on delete cascade,
+  guest_token text not null,
+  value int not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (request_id, guest_token)
+);
+
+create index if not exists request_votes_party_request_idx on public.request_votes(party_id, request_id);
+create index if not exists request_votes_request_value_idx on public.request_votes(request_id, value);
+
 create table if not exists public.idempotency_keys (
   id uuid primary key default extensions.gen_random_uuid(),
   party_id uuid not null references public.parties(id) on delete cascade,
@@ -89,18 +103,29 @@ alter table public.song_requests
   check (service in ('Apple Music', 'Spotify', 'SoundCloud'));
 
 alter table public.song_requests
+  drop constraint if exists song_requests_status_chk;
+
+alter table public.song_requests
   add constraint song_requests_status_chk
-  check (status in ('queued', 'played', 'rejected'));
+  check (status in ('queued', 'approved', 'played', 'rejected'));
 
 alter table public.song_requests
   add constraint song_requests_song_url_chk
   check (song_url is null or song_url = '' or song_url ~ '^https://');
+
+alter table public.request_votes
+  drop constraint if exists request_votes_value_chk;
+
+alter table public.request_votes
+  add constraint request_votes_value_chk
+  check (value in (-1, 1));
 
 -- RLS: default deny. All guest traffic uses RPC.
 alter table public.parties enable row level security;
 alter table public.dj_sessions enable row level security;
 alter table public.song_requests enable row level security;
 alter table public.idempotency_keys enable row level security;
+alter table public.request_votes enable row level security;
 
 -- Allow authenticated DJs to list their own parties (optional convenience).
 drop policy if exists parties_owner_select on public.parties;
@@ -501,6 +526,80 @@ begin
 end;
 $$;
 
+create or replace function public.guest_list_requests(p_code text, p_guest_token text default null)
+returns table(
+  id uuid,
+  seq_no int,
+  title text,
+  artist text,
+  service text,
+  status text,
+  played_at timestamptz,
+  played_by text,
+  created_at timestamptz,
+  upvotes int,
+  downvotes int,
+  score int,
+  my_vote int
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  code_norm text := public.normalize_party_code(p_code);
+  guest_token_clean text := left(trim(coalesce(p_guest_token,'')), 120);
+  party_row public.parties%rowtype;
+begin
+  if code_norm !~ '^[A-Z0-9]{6}$' then
+    raise exception 'Invalid party code';
+  end if;
+
+  select * into party_row from public.parties where code = code_norm;
+  if not found then
+    raise exception 'Party not found';
+  end if;
+
+  return query
+  with vote_totals as (
+    select
+      v.request_id,
+      count(*) filter (where v.value = 1)::int as upvotes,
+      count(*) filter (where v.value = -1)::int as downvotes
+    from public.request_votes v
+    where v.party_id = party_row.id
+    group by v.request_id
+  ),
+  my_votes as (
+    select v.request_id, v.value::int as my_vote
+      from public.request_votes v
+     where guest_token_clean <> ''
+       and v.party_id = party_row.id
+       and v.guest_token = guest_token_clean
+  )
+  select
+    r.id,
+    r.seq_no,
+    r.title,
+    r.artist,
+    r.service,
+    r.status,
+    r.played_at,
+    r.played_by,
+    r.created_at,
+    coalesce(vt.upvotes, 0)::int as upvotes,
+    coalesce(vt.downvotes, 0)::int as downvotes,
+    (coalesce(vt.upvotes, 0) - coalesce(vt.downvotes, 0))::int as score,
+    coalesce(mv.my_vote, 0)::int as my_vote
+  from public.song_requests r
+  left join vote_totals vt on vt.request_id = r.id
+  left join my_votes mv on mv.request_id = r.id
+  where r.party_id = party_row.id
+  order by r.created_at desc, r.seq_no desc
+  limit 40;
+end;
+$$;
+
 -- DJ RPC: list requests (token-based, for the DJ desktop app).
 create or replace function public.dj_list_requests(p_code text, p_session_id uuid, p_dj_token text)
 returns table(
@@ -513,7 +612,10 @@ returns table(
   status text,
   played_at timestamptz,
   played_by text,
-  created_at timestamptz
+  created_at timestamptz,
+  upvotes int,
+  downvotes int,
+  score int
 )
 language plpgsql
 security definer
@@ -548,11 +650,33 @@ begin
   end if;
 
   return query
-  select r.id, r.seq_no, r.title, r.artist, r.service, coalesce(r.song_url,''), r.status,
-         r.played_at, r.played_by, r.created_at
-    from public.song_requests r
-   where r.party_id = party_row.id
-   order by r.seq_no asc;
+  with vote_totals as (
+    select
+      v.request_id,
+      count(*) filter (where v.value = 1)::int as upvotes,
+      count(*) filter (where v.value = -1)::int as downvotes
+    from public.request_votes v
+    where v.party_id = party_row.id
+    group by v.request_id
+  )
+  select
+    r.id,
+    r.seq_no,
+    r.title,
+    r.artist,
+    r.service,
+    coalesce(r.song_url,''),
+    r.status,
+    r.played_at,
+    r.played_by,
+    r.created_at,
+    coalesce(vt.upvotes, 0)::int as upvotes,
+    coalesce(vt.downvotes, 0)::int as downvotes,
+    (coalesce(vt.upvotes, 0) - coalesce(vt.downvotes, 0))::int as score
+  from public.song_requests r
+  left join vote_totals vt on vt.request_id = r.id
+  where r.party_id = party_row.id
+  order by r.seq_no asc;
 end;
 $$;
 
@@ -595,6 +719,54 @@ begin
   device := session_row.device_name;
   update public.song_requests
      set status = 'played',
+         played_at = now(),
+         played_by = device
+   where id = p_request_id and party_id = party_row.id;
+
+  ok := true;
+  return next;
+end;
+$$;
+
+create or replace function public.dj_mark_approved(p_code text, p_request_id uuid, p_session_id uuid, p_dj_token text)
+returns table(ok boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  code_norm text := public.normalize_party_code(p_code);
+  token_clean text := trim(coalesce(p_dj_token,''));
+  party_row public.parties%rowtype;
+  session_row public.dj_sessions%rowtype;
+  device text;
+begin
+  if code_norm !~ '^[A-Z0-9]{6}$' then
+    raise exception 'Invalid party code';
+  end if;
+  if p_request_id is null then
+    raise exception 'Invalid request ID';
+  end if;
+  if p_session_id is null or token_clean = '' then
+    raise exception 'Missing DJ credentials';
+  end if;
+
+  select * into party_row from public.parties where code = code_norm;
+  if not found then
+    raise exception 'Party not found';
+  end if;
+
+  select * into session_row from public.dj_sessions where id = p_session_id and party_id = party_row.id and active = true;
+  if not found then
+    raise exception 'Invalid DJ session';
+  end if;
+  if session_row.token_hash <> public.sha256_hex(token_clean) then
+    raise exception 'Invalid DJ token';
+  end if;
+
+  device := session_row.device_name;
+  update public.song_requests
+     set status = 'approved',
          played_at = now(),
          played_by = device
    where id = p_request_id and party_id = party_row.id;
@@ -692,6 +864,68 @@ begin
          played_at = now(),
          played_by = device
    where id = p_request_id and party_id = party_row.id;
+
+  ok := true;
+  return next;
+end;
+$$;
+
+create or replace function public.guest_vote_request(
+  p_code text,
+  p_request_id uuid,
+  p_guest_token text,
+  p_value int
+)
+returns table(ok boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  code_norm text := public.normalize_party_code(p_code);
+  guest_token_clean text := left(trim(coalesce(p_guest_token,'')), 120);
+  vote_value int := coalesce(p_value, 0);
+  party_row public.parties%rowtype;
+  request_row public.song_requests%rowtype;
+begin
+  if code_norm !~ '^[A-Z0-9]{6}$' then
+    raise exception 'Invalid party code';
+  end if;
+  if p_request_id is null then
+    raise exception 'Invalid request ID';
+  end if;
+  if guest_token_clean = '' then
+    raise exception 'Invalid guest token';
+  end if;
+  if vote_value not in (-1, 0, 1) then
+    raise exception 'Invalid vote value';
+  end if;
+
+  select * into party_row from public.parties where code = code_norm;
+  if not found then
+    raise exception 'Party not found';
+  end if;
+  if party_row.expires_at <= now() then
+    raise exception 'Party expired';
+  end if;
+
+  select * into request_row from public.song_requests where id = p_request_id and party_id = party_row.id;
+  if not found then
+    raise exception 'Request not found';
+  end if;
+
+  if vote_value = 0 then
+    delete from public.request_votes
+     where request_id = request_row.id
+       and guest_token = guest_token_clean;
+  else
+    insert into public.request_votes(party_id, request_id, guest_token, value)
+    values (party_row.id, request_row.id, guest_token_clean, vote_value)
+    on conflict (request_id, guest_token)
+    do update
+       set value = excluded.value,
+           updated_at = now();
+  end if;
 
   ok := true;
   return next;

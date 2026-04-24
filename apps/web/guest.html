@@ -28,42 +28,66 @@
             <span class="wordmark">Whiteout</span>
             <span class="hero-title-sub">Request a track</span>
           </h1>
-          <p class="subtitle">Enter the code from the booth, pick the song, and send it straight to the live queue.</p>
+          <p class="subtitle">Scan in, watch the room move, and send your song straight to the booth without losing the vibe.</p>
         </div>
 
-        <div class="poster-stack poster-stack-guest" aria-hidden="true">
-          <figure class="poster-card poster-card-main">
-            <img src="assets/poster-cash-open.jpg" alt="Whiteout poster" />
-          </figure>
-          <figure class="poster-card poster-card-top">
-            <img src="assets/poster-invite.jpg" alt="Whiteout invite" />
-          </figure>
+        <div class="brand-scene brand-scene-guest" aria-hidden="true">
+          <div class="brand-card brand-card-main">
+            <img class="brand-mark" src="assets/whiteout-mark.svg" alt="" />
+          </div>
+          <div class="brand-card brand-card-tag">WHITEOUT LIVE</div>
+          <div class="brand-card brand-card-code">SCAN. PICK. SEND.</div>
+          <div class="brand-spray brand-spray-a"></div>
+          <div class="brand-spray brand-spray-b"></div>
         </div>
       </header>
 
       <section class="window-panel reveal delay-1">
-        <article class="panel panel-priority" id="joinPanel">
-          <div class="panel-head">
-            <h2>Enter Room Code</h2>
-            <span class="chip">Guest Pass</span>
-          </div>
+        <div class="panel-grid panel-grid-2 guest-live-grid">
+          <article class="panel panel-priority" id="joinPanel">
+            <div class="panel-head">
+              <h2>Enter Room Code</h2>
+              <span class="chip">Guest Pass</span>
+            </div>
 
-          <form id="joinForm" class="form-grid">
-            <label for="partyCode">Code</label>
-            <input id="partyCode" maxlength="6" autocomplete="off" placeholder="ABC123" required />
-            <button type="submit" class="btn btn-primary">Join Whiteout</button>
-          </form>
+            <form id="joinForm" class="form-grid">
+              <label for="partyCode">Code</label>
+              <input id="partyCode" maxlength="6" autocomplete="off" placeholder="ABC123" required />
+              <button type="submit" class="btn btn-primary">Join Whiteout</button>
+            </form>
 
-          <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for a code.</p>
-          <button id="stopCheckingBtn" class="btn btn-ghost btn-mini hidden" type="button">Stop Checking</button>
-        </article>
+            <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for a code.</p>
+            <button id="stopCheckingBtn" class="btn btn-ghost btn-mini hidden" type="button">Stop Checking</button>
+
+            <div class="summary-grid guest-summary-grid">
+              <div class="summary-item">
+                <span>Your requests</span>
+                <strong id="guestMyRequestCount">0</strong>
+              </div>
+              <div class="summary-item">
+                <span>On the wall</span>
+                <strong id="guestFeedCount">0</strong>
+              </div>
+            </div>
+            <p id="guestPartyName" class="micro-note guest-party-name"></p>
+            <p id="guestLastDecision" class="micro-note">Join a room to watch the live wall.</p>
+          </article>
+
+          <article class="panel" id="feedPanel">
+            <div class="panel-head">
+              <h2>Crowd Wall</h2>
+              <span class="chip">Live Board</span>
+            </div>
+            <p id="feedStatus" class="status status-neutral" aria-live="polite">Join a room to see what everyone is requesting.</p>
+            <div id="guestFeedList" class="guest-feed-list" aria-live="polite"></div>
+          </article>
+        </div>
 
         <article class="panel hidden" id="requestPanel">
           <div class="panel-head">
             <h2>Send The Song</h2>
             <span class="chip">Live Queue</span>
           </div>
-          <p id="guestPartyName" class="micro-note guest-party-name"></p>
 
           <form id="requestForm" class="form-grid">
             <div id="appleSearchSection" class="apple-search">
@@ -94,17 +118,8 @@
         </article>
       </section>
 
-      <section class="poster-showcase reveal delay-2" aria-label="Whiteout scene">
-        <figure class="poster-showcase-card">
-          <img src="assets/poster-helmet.jpg" alt="Whiteout helmet poster" />
-        </figure>
-        <figure class="poster-showcase-card">
-          <img src="assets/poster-invite.jpg" alt="Whiteout invite poster" />
-        </figure>
-      </section>
-
       <p class="micro-note reveal delay-2 center-note">
-        Whiteout requests are delivered securely to the booth queue in realtime.
+        Whiteout requests hit the booth in realtime, and the wall updates as the DJ locks tracks in or passes on them.
       </p>
     </main>
 

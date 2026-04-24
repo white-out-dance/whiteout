@@ -19,6 +19,9 @@ function nowLabel(iso) {
 
 function sortQueue(items) {
   items.sort((a, b) => {
+    const aRank = a.status === 'approved' ? 0 : a.status === 'queued' ? 1 : a.status === 'played' ? 2 : 3;
+    const bRank = b.status === 'approved' ? 0 : b.status === 'queued' ? 1 : b.status === 'played' ? 2 : 3;
+    if (aRank !== bRank) return aRank - bRank;
     if (a.seqNo && b.seqNo) return a.seqNo - b.seqNo;
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
@@ -30,7 +33,14 @@ function sanitizeQueueEntry(entry) {
 
   const seqNo = Number.isFinite(Number(entry?.seqNo)) ? Number(entry.seqNo) : 0;
   const statusRaw = String(entry?.status || 'queued').trim().toLowerCase();
-  const status = statusRaw === 'played' ? 'played' : statusRaw === 'rejected' ? 'rejected' : 'queued';
+  const status =
+    statusRaw === 'played'
+      ? 'played'
+      : statusRaw === 'rejected'
+        ? 'rejected'
+        : statusRaw === 'approved'
+          ? 'approved'
+          : 'queued';
 
   return {
     id,
@@ -105,8 +115,8 @@ function addQueueItem(itemInput) {
 }
 
 function render() {
-  const queued = queueItems.filter((e) => e.status === 'queued');
-  const current = queued[0] || null;
+  const active = queueItems.filter((e) => e.status === 'approved' || e.status === 'queued');
+  const current = active[0] || null;
 
   if (!current) {
     overlaySeq.textContent = '--';
@@ -125,9 +135,9 @@ function render() {
   }
 
   overlaySeq.textContent = current.seqNo > 0 ? `#${current.seqNo}` : '#?';
-  overlayService.textContent = current.service;
+  overlayService.textContent = current.status === 'approved' ? `${current.service} • DJ approved` : current.service;
   overlaySongTitle.textContent = current.title;
-  overlaySongArtist.textContent = `${current.artist} • queued ${nowLabel(current.createdAt)}`;
+  overlaySongArtist.textContent = `${current.artist} • ${current.status === 'approved' ? 'approved' : 'queued'} ${nowLabel(current.playedAt || current.createdAt)}`;
 
   overlayPlayedBtn.disabled = false;
   overlaySkipBtn.disabled = false;

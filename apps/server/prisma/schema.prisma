@@ -29,6 +29,7 @@ model Party {
   djSessions        DjSession[]     @relation("PartySessions")
   requests          SongRequest[]
   idempotencyKeys   IdempotencyKey[]
+  votes             RequestVote[]
 
   @@index([ownerId])
 }
@@ -48,23 +49,40 @@ model DjSession {
 }
 
 model SongRequest {
-  id             String           @id @default(cuid())
-  seqNo          Int
-  partyId        String
-  party          Party            @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  title          String
-  artist         String
-  service        String
-  songUrl        String?
-  status         String           @default("queued")
-  playedAt       DateTime?
-  playedBy       String?
-  createdAt      DateTime         @default(now())
+  id              String           @id @default(cuid())
+  seqNo           Int
+  partyId         String
+  party           Party            @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  title           String
+  artist          String
+  service         String
+  songUrl         String?
+  status          String           @default("queued")
+  playedAt        DateTime?
+  playedBy        String?
+  createdAt       DateTime         @default(now())
   idempotencyKeys IdempotencyKey[]
+  votes           RequestVote[]
 
   @@unique([partyId, seqNo])
   @@index([partyId, createdAt])
   @@index([partyId, status, seqNo])
+}
+
+model RequestVote {
+  id         String      @id @default(cuid())
+  partyId    String
+  party      Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  requestId  String
+  request    SongRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  guestToken String
+  value      Int
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([requestId, guestToken])
+  @@index([partyId, requestId])
+  @@index([requestId, value])
 }
 
 model IdempotencyKey {

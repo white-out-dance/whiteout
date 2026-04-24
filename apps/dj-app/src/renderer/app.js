@@ -260,7 +260,14 @@ function sanitizeQueueEntry(entry) {
 
   const seqNo = Number.isFinite(Number(entry?.seqNo)) ? Number(entry.seqNo) : 0;
   const statusRaw = String(entry?.status || 'queued').trim().toLowerCase();
-  const status = statusRaw === 'played' ? 'played' : statusRaw === 'rejected' ? 'rejected' : 'queued';
+  const status =
+    statusRaw === 'played'
+      ? 'played'
+      : statusRaw === 'rejected'
+        ? 'rejected'
+        : statusRaw === 'approved'
+          ? 'approved'
+          : 'queued';
 
   return {
     id,
@@ -272,12 +279,22 @@ function sanitizeQueueEntry(entry) {
     status,
     playedAt: entry?.playedAt ? String(entry.playedAt) : '',
     playedBy: String(entry?.playedBy || '').trim(),
-    createdAt: String(entry?.createdAt || new Date().toISOString())
+    createdAt: String(entry?.createdAt || new Date().toISOString()),
+    upvotes: Math.max(0, Math.floor(Number(entry?.upvotes ?? 0) || 0)),
+    downvotes: Math.max(0, Math.floor(Number(entry?.downvotes ?? 0) || 0)),
+    score: Math.trunc(Number(entry?.score ?? 0) || 0),
+    myVote: Math.trunc(Number(entry?.myVote ?? 0) || 0)
   };
 }
 
 function sortQueue(items) {
   items.sort((a, b) => {
+    const aRank = a.status === 'approved' ? 0 : a.status === 'queued' ? 1 : a.status === 'played' ? 2 : 3;
+    const bRank = b.status === 'approved' ? 0 : b.status === 'queued' ? 1 : b.status === 'played' ? 2 : 3;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+
     const aHasSeq = a.seqNo > 0;
     const bHasSeq = b.seqNo > 0;
 
@@ -292,8 +309,8 @@ function sortQueue(items) {
 }
 
 function updateQueueCounters() {
-  const queued = queueItems.filter((entry) => entry.status === 'queued').length;
-  const played = queueItems.filter((entry) => entry.status === 'played').length;
+  const queued = queueItems.filter((entry) => entry.status === 'queued' || entry.status === 'approved').length;
+  const played = queueItems.filter((entry) => entry.status === 'played' || entry.status === 'rejected').length;
 
   requestCount.textContent = String(queued);
   requestCountTab.textContent = String(queued);
@@ -333,7 +350,7 @@ function addQueueItem(itemInput) {
   renderPlayedList();
   renderStage();
 
-  if (activeWindow !== 'requests' && activeWindow !== 'stage' && existing < 0 && item.status === 'queued') {
+  if (activeWindow !== 'requests' && activeWindow !== 'stage' && existing < 0 && (item.status === 'queued' || item.status === 'approved')) {
     tabRequestsBtn.classList.add('has-alert');
   }
 }
@@ -375,14 +392,27 @@ async function markRequestPlayed(requestId, button) {
   }
 }
 
+async function markRequestApproved(requestId, button) {
+  const idleLabel = button?.dataset?.idleLabel || 'Approve';
+  setButtonBusy(button, true, 'Saving...', idleLabel);
+  try {
+    await window.djApi.markApproved({ requestId });
+  } catch (error) {
+    appendLog('error', error.message || 'Failed to approve request.', new Date().toISOString());
+  } finally {
+    setButtonBusy(button, false, 'Saving...', idleLabel);
+  }
+}
+
 async function markRequestQueued(requestId, button) {
-  setButtonBusy(button, true, 'Undoing...', 'Undo');
+  const idleLabel = button?.dataset?.idleLabel || 'Queue';
+  setButtonBusy(button, true, 'Saving...', idleLabel);
   try {
     await window.djApi.markQueued({ requestId });
   } catch (error) {
     appendLog('error', error.message || 'Failed to return request to queue.', new Date().toISOString());
   } finally {
-    setButtonBusy(button, false, 'Undoing...', 'Undo');
+    setButtonBusy(button, false, 'Saving...', idleLabel);
   }
 }
 
@@ -399,6 +429,15 @@ async function markRequestRejected(requestId, button, labels = {}) {
   }
 }
 
+function buildVoteSummary(entry) {
+  const scoreLabel = entry.score > 0 ? `+${entry.score}` : `${entry.score}`;
+  return `Votes ${scoreLabel} • ▲${entry.upvotes} • ▼${entry.downvotes}`;
+}
+
+function activeQueueItems() {
+  return queueItems.filter((entry) => entry.status === 'queued' || entry.status === 'approved');
+}
+
 function renderRequestList() {
   requestsList.textContent = '';
   updateQueueCounters();
@@ -406,10 +445,10 @@ function renderRequestList() {
   const filterTerm = String(queueFilterInput?.value || '')
     .trim()
     .toLowerCase();
-  const queuedItems = queueItems;
+  const queuedItems = activeQueueItems();
   const visibleItems = filterTerm
     ? queuedItems.filter((entry) => {
-        const hay = `${entry.title} ${entry.artist} ${entry.service}`.toLowerCase();
+        const hay = `${entry.title} ${entry.artist} ${entry.service} ${entry.status}`.toLowerCase();
         return hay.includes(filterTerm);
       })
     : queuedItems;
@@ -425,7 +464,7 @@ function renderRequestList() {
   if (filterTerm) {
     const note = document.createElement('p');
     note.className = 'filter-note';
-    note.textContent = `Showing ${visibleItems.length} of ${queuedItems.length} queued requests.`;
+    note.textContent = `Showing ${visibleItems.length} of ${queuedItems.length} live requests.`;
     requestsList.appendChild(note);
 
     if (!visibleItems.length) {
@@ -450,7 +489,7 @@ function renderRequestList() {
 
     const service = document.createElement('span');
     service.className = 'request-service';
-    service.textContent = entry.service;
+    service.textContent = entry.status === 'approved' ? `${entry.service} • approved` : entry.service;
 
     top.append(seq, service);
 
@@ -464,27 +503,35 @@ function renderRequestList() {
 
     const meta = document.createElement('p');
     meta.className = 'request-sub';
-    meta.textContent = `Queued ${nowLabel(entry.createdAt)}`;
+    meta.textContent = `${entry.status === 'approved' ? 'Approved' : 'Queued'} ${nowLabel(entry.playedAt || entry.createdAt)} • ${buildVoteSummary(entry)}`;
 
     const actions = document.createElement('div');
     actions.className = 'request-actions';
 
+    const approveButton = document.createElement('button');
+    approveButton.type = 'button';
+    approveButton.className = 'btn btn-accent btn-mini';
+    approveButton.textContent = entry.status === 'approved' ? 'Queue' : 'Approve';
+    approveButton.dataset.idleLabel = approveButton.textContent;
+    approveButton.addEventListener('click', () => {
+      if (entry.status === 'approved') {
+        markRequestQueued(entry.id, approveButton);
+      } else {
+        markRequestApproved(entry.id, approveButton);
+      }
+    });
+
     const playedButton = document.createElement('button');
     playedButton.type = 'button';
     playedButton.className = 'btn btn-success btn-mini';
-    playedButton.textContent = entry.status === 'played' ? 'Played' : 'Played';
+    playedButton.textContent = 'Played';
     playedButton.addEventListener('click', () => markRequestPlayed(entry.id, playedButton));
 
     const rejectButton = document.createElement('button');
     rejectButton.type = 'button';
     rejectButton.className = 'btn btn-danger btn-mini';
-    rejectButton.textContent = 'X';
+    rejectButton.textContent = 'Reject';
     rejectButton.addEventListener('click', () => markRequestRejected(entry.id, rejectButton));
-
-    if (entry.status === 'played' || entry.status === 'rejected') {
-      playedButton.disabled = true;
-      rejectButton.disabled = true;
-    }
 
     if (entry.songUrl) {
       const open = document.createElement('a');
@@ -493,14 +540,14 @@ function renderRequestList() {
       open.target = '_blank';
       open.rel = 'noreferrer noopener';
       open.textContent = 'Open Link';
-      actions.append(playedButton, rejectButton, open);
+      actions.append(approveButton, playedButton, rejectButton, open);
     } else {
       const copy = document.createElement('button');
       copy.type = 'button';
       copy.className = 'btn btn-ghost btn-mini';
       copy.textContent = 'Copy';
       copy.addEventListener('click', () => copySongSummary(entry));
-      actions.append(playedButton, rejectButton, copy);
+      actions.append(approveButton, playedButton, rejectButton, copy);
     }
 
     item.append(top, title, artist, meta, actions);
@@ -536,7 +583,7 @@ function renderPlayedList() {
   if (!playedItems.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
-    empty.textContent = 'No played or removed requests yet.';
+    empty.textContent = 'No played or rejected requests yet.';
     playedList.appendChild(empty);
     return;
   }
@@ -586,7 +633,7 @@ function renderPlayedList() {
 
     const meta = document.createElement('p');
     meta.className = 'request-sub';
-    meta.textContent = `Played ${playedLabel}${playedBy}`;
+    meta.textContent = `${entry.status === 'rejected' ? 'Rejected' : 'Played'} ${playedLabel}${playedBy} • ${buildVoteSummary(entry)}`;
 
     const actions = document.createElement('div');
     actions.className = 'request-actions';
@@ -594,7 +641,8 @@ function renderPlayedList() {
     const undoButton = document.createElement('button');
     undoButton.type = 'button';
     undoButton.className = 'btn btn-ghost btn-mini';
-    undoButton.textContent = 'Undo';
+    undoButton.textContent = 'Return To Queue';
+    undoButton.dataset.idleLabel = 'Return To Queue';
     undoButton.addEventListener('click', () => markRequestQueued(entry.id, undoButton));
 
     if (entry.songUrl) {
@@ -660,7 +708,7 @@ function renderStagePreview(entries) {
 
     const meta = document.createElement('p');
     meta.className = 'request-sub';
-    meta.textContent = `Queued ${nowLabel(entry.createdAt)}`;
+    meta.textContent = `${entry.status === 'approved' ? 'Approved' : 'Queued'} ${nowLabel(entry.playedAt || entry.createdAt)} • ${buildVoteSummary(entry)}`;
 
     item.append(top, title, artist, meta);
     stagePreviewList.appendChild(item);
@@ -670,9 +718,10 @@ function renderStagePreview(entries) {
 function renderStage() {
   if (!stageTitle || !stageArtist || !stageService || !stageSeq) return;
 
+  const approved = queueItems.filter((entry) => entry.status === 'approved');
   const queued = queueItems.filter((entry) => entry.status === 'queued');
-
-  const current = queued[0] || null;
+  const stageQueue = approved.length ? approved.concat(queued) : queued;
+  const current = stageQueue[0] || null;
   if (!current) {
     stageSeq.textContent = '--';
     stageService.textContent = 'No queued songs yet.';
@@ -691,10 +740,10 @@ function renderStage() {
   }
 
   stageSeq.textContent = current.seqNo > 0 ? `#${current.seqNo}` : '#?';
-  stageService.textContent = current.service;
+  stageService.textContent = current.status === 'approved' ? `${current.service} • DJ approved` : current.service;
   stageTitle.textContent = current.title;
   stageArtist.textContent = current.artist;
-  stageMeta.textContent = `Queued ${nowLabel(current.createdAt)}`;
+  stageMeta.textContent = `${current.status === 'approved' ? 'Approved' : 'Queued'} ${nowLabel(current.playedAt || current.createdAt)} • ${buildVoteSummary(current)}`;
 
   if (stageMarkPlayedBtn) {
     stageMarkPlayedBtn.disabled = false;
@@ -730,7 +779,7 @@ function renderStage() {
     stageDownloadBtn.onclick = () => openDownloadFlowForSong(current.songUrl);
   }
 
-  renderStagePreview(queued.slice(1, 6));
+  renderStagePreview(stageQueue.slice(1, 6));
 }
 
 function readFormConfig() {
@@ -1012,12 +1061,12 @@ function setQrPreset(preset) {
   if (qrPresetIpadBtn) qrPresetIpadBtn.classList.toggle('is-active', qrExportPreset === 'ipad');
 }
 
-function loadImageFromDataUrl(dataUrl) {
+function loadImageFromSource(source) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Could not load QR image'));
-    img.src = String(dataUrl || '');
+    img.onerror = () => reject(new Error('Could not load image'));
+    img.src = String(source || '');
   });
 }
 
@@ -1035,6 +1084,47 @@ function drawRoundRect(ctx, x, y, w, h, r) {
 function presetSpec(preset) {
   if (preset === 'ipad') return { key: 'ipad', w: 2732, h: 2048, label: 'iPad Landscape (2732x2048)' };
   return { key: 'iphone', w: 2796, h: 1290, label: 'iPhone Landscape (2796x1290)' };
+}
+
+function drawWrappedText(ctx, textInput, x, y, maxWidth, lineHeight, maxLines = 2) {
+  const text = String(textInput || '').trim();
+  if (!text) return y;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || !current) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) {
+    lines.push(current);
+  }
+
+  const visibleLines = lines.slice(0, Math.max(1, maxLines));
+  if (lines.length > visibleLines.length) {
+    const lastIndex = visibleLines.length - 1;
+    let trimmed = visibleLines[lastIndex];
+    while (trimmed && ctx.measureText(`${trimmed}…`).width > maxWidth) {
+      trimmed = trimmed.slice(0, -1).trim();
+    }
+    visibleLines[lastIndex] = trimmed ? `${trimmed}…` : '…';
+  }
+
+  let currentY = y;
+  for (const line of visibleLines) {
+    ctx.fillText(line, x, currentY, maxWidth);
+    currentY += lineHeight;
+  }
+
+  return currentY;
 }
 
 async function buildQrPosterPng(payload, preset) {
@@ -1056,17 +1146,22 @@ async function buildQrPosterPng(payload, preset) {
   ctx.fillStyle = '#070707';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Grain + slashed poster background.
+  const markSrc = new URL('assets/whiteout-mark.svg', window.location.href).toString();
+  const [qrImg, markImg] = await Promise.all([
+    loadImageFromSource(qrDataUrl),
+    loadImageFromSource(markSrc).catch(() => null)
+  ]);
+
   ctx.save();
-  ctx.translate(canvasWidth * 0.04, canvasHeight * 0.1);
-  ctx.rotate(-0.18);
-  ctx.fillStyle = 'rgba(255,255,255,0.11)';
-  for (let i = -1; i < 6; i += 1) {
-    ctx.fillRect(-canvasWidth * 0.2, i * canvasHeight * 0.18, canvasWidth * 1.5, Math.max(18, canvasHeight * 0.03));
+  ctx.translate(canvasWidth * 0.06, canvasHeight * 0.08);
+  ctx.rotate(-0.17);
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  for (let i = -1; i < 7; i += 1) {
+    ctx.fillRect(-canvasWidth * 0.2, i * canvasHeight * 0.16, canvasWidth * 1.5, Math.max(18, canvasHeight * 0.026));
   }
   ctx.restore();
 
-  for (let i = 0; i < 340; i += 1) {
+  for (let i = 0; i < 430; i += 1) {
     const x = Math.random() * canvasWidth;
     const yDot = Math.random() * canvasHeight;
     const size = 1 + Math.random() * 4;
@@ -1074,71 +1169,82 @@ async function buildQrPosterPng(payload, preset) {
     ctx.fillRect(x, yDot, size, size);
   }
 
-  const pad = Math.round(canvasWidth * 0.055);
-  const cardX = pad;
-  const cardW = canvasWidth - pad * 2;
-  const cardY = Math.round(canvasHeight * 0.11);
-  const cardH = Math.round(canvasHeight * 0.78);
-  drawRoundRect(ctx, cardX, cardY, cardW, cardH, 52);
+  if (markImg) {
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    const bgSize = Math.round(canvasHeight * 0.82);
+    ctx.drawImage(markImg, canvasWidth - bgSize - canvasWidth * 0.05, canvasHeight * 0.08, bgSize, bgSize);
+    ctx.restore();
+  }
+
+  const pad = Math.round(canvasWidth * 0.05);
+  const leftCardX = pad;
+  const leftCardY = Math.round(canvasHeight * 0.11);
+  const leftCardW = Math.round(canvasWidth * 0.5);
+  const leftCardH = Math.round(canvasHeight * 0.78);
+  drawRoundRect(ctx, leftCardX, leftCardY, leftCardW, leftCardH, 54);
   ctx.fillStyle = '#f3efe8';
   ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
   ctx.stroke();
-  drawRoundRect(ctx, cardX + 18, cardY + 18, cardW - 36, cardH - 36, 40);
+  drawRoundRect(ctx, leftCardX + 18, leftCardY + 18, leftCardW - 36, leftCardH - 36, 40);
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(8, 8, 8, 0.11)';
   ctx.stroke();
 
-  const leftX = cardX + Math.round(cardW * 0.07);
-  const leftW = Math.round(cardW * 0.5);
-  let y = cardY + Math.round(cardH * 0.19);
+  const qrCardW = Math.round(canvasWidth * 0.27);
+  const qrCardH = Math.round(canvasHeight * 0.78);
+  const qrCardX = canvasWidth - pad - qrCardW;
+  const qrCardY = leftCardY;
+  drawRoundRect(ctx, qrCardX, qrCardY, qrCardW, qrCardH, 54);
+  ctx.fillStyle = '#101010';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(243, 239, 232, 0.14)';
+  ctx.stroke();
+
+  const leftX = leftCardX + Math.round(leftCardW * 0.08);
+  const leftW = leftCardW - Math.round(leftCardW * 0.16);
+  let y = leftCardY + Math.round(leftCardH * 0.16);
 
   ctx.fillStyle = '#0c0c0c';
-  ctx.font = `700 ${Math.round(cardH * 0.065)}px "League Spartan", system-ui, -apple-system`;
+  ctx.font = `800 ${Math.round(leftCardH * 0.055)}px "League Spartan", system-ui, -apple-system`;
   ctx.fillText('WHITE-OUT DANCE', leftX, y, leftW);
 
-  y += Math.round(cardH * 0.18);
-  ctx.font = `400 ${Math.round(cardH * 0.19)}px "Lilita One", system-ui, -apple-system`;
+  y += Math.round(leftCardH * 0.12);
+  ctx.font = `400 ${Math.round(leftCardH * 0.165)}px "Lilita One", system-ui, -apple-system`;
   ctx.fillText('Whiteout', leftX, y, leftW);
 
-  y += Math.round(cardH * 0.17);
-  ctx.font = `800 ${Math.round(cardH * 0.27)}px "League Spartan", Impact, system-ui`;
-  ctx.fillText(partyCode, leftX, y, leftW);
+  y += Math.round(leftCardH * 0.14);
+  drawRoundRect(ctx, leftX, y - Math.round(leftCardH * 0.088), Math.round(leftW * 0.52), Math.round(leftCardH * 0.14), 30);
+  ctx.fillStyle = '#0c0c0c';
+  ctx.fill();
+  ctx.fillStyle = '#f3efe8';
+  ctx.font = `900 ${Math.round(leftCardH * 0.11)}px "League Spartan", Impact, system-ui`;
+  ctx.fillText(partyCode, leftX + Math.round(leftW * 0.03), y, leftW);
 
-  y += Math.round(cardH * 0.11);
-  ctx.font = `800 ${Math.round(cardH * 0.082)}px "League Spartan", system-ui, -apple-system`;
+  y += Math.round(leftCardH * 0.13);
+  ctx.fillStyle = '#0c0c0c';
+  ctx.font = `800 ${Math.round(leftCardH * 0.082)}px "League Spartan", system-ui, -apple-system`;
   ctx.fillText('SCAN TO REQUEST', leftX, y, leftW);
 
-  y += Math.round(cardH * 0.105);
+  y += Math.round(leftCardH * 0.085);
   ctx.fillStyle = '#3f3b35';
-  ctx.font = `600 ${Math.round(cardH * 0.062)}px "Space Grotesk", system-ui, -apple-system`;
-  ctx.fillText('ALL WHITE. ALL NIGHT. LIVE QUEUE.', leftX, y, leftW);
+  ctx.font = `700 ${Math.round(leftCardH * 0.05)}px "Space Grotesk", system-ui, -apple-system`;
+  y = drawWrappedText(ctx, 'Vote songs up or down. Watch the wall move. Let the DJ lock it in live.', leftX, y, leftW, Math.round(leftCardH * 0.07), 3);
 
-  const qrImg = await loadImageFromDataUrl(qrDataUrl);
-  const qrSize = Math.round(Math.min(cardH * 0.66, cardW * 0.29));
-  const qrX = Math.round(cardX + cardW * 0.69);
-  const qrY = Math.round(cardY + (cardH - qrSize) / 2);
-  drawRoundRect(ctx, qrX - 28, qrY - 28, qrSize + 56, qrSize + 56, 36);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = '#0c0c0c';
-  ctx.stroke();
-  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
-
-  const dividerX = Math.round(cardX + cardW * 0.61);
-  ctx.beginPath();
-  ctx.moveTo(dividerX, cardY + Math.round(cardH * 0.12));
-  ctx.lineTo(dividerX, cardY + Math.round(cardH * 0.88));
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(12,12,12,0.12)';
-  ctx.stroke();
+  y += Math.round(leftCardH * 0.04);
+  ctx.fillStyle = '#0c0c0c';
+  ctx.font = `800 ${Math.round(leftCardH * 0.05)}px "League Spartan", system-ui, -apple-system`;
+  ctx.fillText('ALL WHITE. ALL NIGHT.', leftX, y, leftW);
+  y += Math.round(leftCardH * 0.065);
+  ctx.fillText('MOBILE CROWD WALL + LIVE BOOTH.', leftX, y, leftW);
 
   const barcodeX = leftX;
-  const barcodeY = cardY + cardH - Math.round(cardH * 0.16);
-  const barcodeW = Math.round(leftW * 0.62);
-  const barcodeH = Math.round(cardH * 0.11);
+  const barcodeY = leftCardY + leftCardH - Math.round(leftCardH * 0.16);
+  const barcodeW = Math.round(leftW * 0.68);
+  const barcodeH = Math.round(leftCardH * 0.11);
   ctx.fillStyle = '#0c0c0c';
   ctx.fillRect(barcodeX, barcodeY, barcodeW, barcodeH);
   let barCursor = barcodeX + 10;
@@ -1153,12 +1259,42 @@ async function buildQrPosterPng(payload, preset) {
     if (barCursor > barcodeX + barcodeW - 12) break;
   }
 
+  if (markImg) {
+    const stickerSize = Math.round(qrCardW * 0.54);
+    ctx.save();
+    ctx.globalAlpha = 0.98;
+    ctx.drawImage(markImg, qrCardX + Math.round(qrCardW * 0.23), qrCardY + Math.round(qrCardH * 0.06), stickerSize, stickerSize);
+    ctx.restore();
+  }
+
+  const qrFrameSize = Math.round(Math.min(qrCardW * 0.74, qrCardH * 0.44));
+  const qrX = qrCardX + Math.round((qrCardW - qrFrameSize) / 2);
+  const qrY = qrCardY + Math.round(qrCardH * 0.35);
+  drawRoundRect(ctx, qrX - 24, qrY - 24, qrFrameSize + 48, qrFrameSize + 48, 38);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#0c0c0c';
+  ctx.stroke();
+  ctx.drawImage(qrImg, qrX, qrY, qrFrameSize, qrFrameSize);
+
+  ctx.fillStyle = '#f3efe8';
+  ctx.font = `900 ${Math.round(qrCardH * 0.055)}px "League Spartan", system-ui, -apple-system`;
+  ctx.fillText('SCAN', qrCardX + Math.round(qrCardW * 0.13), qrY + qrFrameSize + Math.round(qrCardH * 0.14), qrCardW * 0.74);
+  ctx.fillText('SEND', qrCardX + Math.round(qrCardW * 0.13), qrY + qrFrameSize + Math.round(qrCardH * 0.22), qrCardW * 0.74);
+
   if (guestUrl) {
-    const maxChars = canvasWidth >= 2500 ? 78 : 62;
-    const urlDisplay = guestUrl.length > maxChars ? `${guestUrl.slice(0, maxChars - 1)}…` : guestUrl;
-    ctx.fillStyle = '#3f3b35';
-    ctx.font = `500 ${Math.round(cardH * 0.05)}px "Space Grotesk", system-ui, -apple-system`;
-    ctx.fillText(urlDisplay, leftX, cardY + cardH - Math.round(cardH * 0.06), leftW);
+    ctx.fillStyle = 'rgba(243, 239, 232, 0.82)';
+    ctx.font = `500 ${Math.round(qrCardH * 0.028)}px "Space Grotesk", system-ui, -apple-system`;
+    drawWrappedText(
+      ctx,
+      guestUrl.replace(/^https?:\/\//, ''),
+      qrCardX + Math.round(qrCardW * 0.11),
+      qrCardY + qrCardH - Math.round(qrCardH * 0.11),
+      Math.round(qrCardW * 0.78),
+      Math.round(qrCardH * 0.04),
+      2
+    );
   }
 
   return canvas.toDataURL('image/png');

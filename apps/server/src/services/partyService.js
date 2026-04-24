@@ -9,6 +9,7 @@ const PARTY_TTL_MS = Number(process.env.PARTY_TTL_MS || 12 * 60 * 60 * 1000);
 const DJ_HEARTBEAT_TIMEOUT_MS = Number(process.env.DJ_HEARTBEAT_TIMEOUT_MS || 30 * 1000);
 const MAX_REQUESTS_PER_PARTY = Number(process.env.MAX_REQUESTS_PER_PARTY || 500);
 const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'YouTube']);
+const VOTE_VALUES = new Set([-1, 0, 1]);
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -68,7 +69,16 @@ function toPublicParty(party) {
   };
 }
 
-function toRequestView(request, partyCode) {
+function emptyVoteStats() {
+  return {
+    upvotes: 0,
+    downvotes: 0,
+    score: 0,
+    myVote: 0
+  };
+}
+
+function toRequestView(request, partyCode, voteStats = emptyVoteStats()) {
   const songUrl = request.songUrl || '';
   return {
     id: request.id,
@@ -83,7 +93,29 @@ function toRequestView(request, partyCode) {
     status: request.status || 'queued',
     playedAt: request.playedAt || null,
     playedBy: request.playedBy || '',
-    createdAt: request.createdAt
+    createdAt: request.createdAt,
+    upvotes: voteStats.upvotes || 0,
+    downvotes: voteStats.downvotes || 0,
+    score: voteStats.score || 0,
+    myVote: voteStats.myVote || 0
+  };
+}
+
+function toGuestRequestView(request, voteStats = emptyVoteStats()) {
+  return {
+    id: request.id,
+    seqNo: request.seqNo,
+    title: request.title,
+    artist: request.artist,
+    service: request.service,
+    status: request.status || 'queued',
+    playedAt: request.playedAt || null,
+    playedBy: request.playedBy || '',
+    createdAt: request.createdAt,
+    upvotes: voteStats.upvotes || 0,
+    downvotes: voteStats.downvotes || 0,
+    score: voteStats.score || 0,
+    myVote: voteStats.myVote || 0
   };
 }
 
@@ -132,6 +164,93 @@ function isRetryableWriteError(error) {
   if (error.code === 'P2034') return true;
   if (error.code === 'P2002') return true;
   return false;
+}
+
+function normalizeGuestToken(input) {
+  return String(input || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .slice(0, 120);
+}
+
+function normalizeVoteValue(input) {
+  const value = Number(input);
+  return VOTE_VALUES.has(value) ? value : null;
+}
+
+async function getVoteStatsForRequestIds(requestIdsInput, guestTokenInput = '') {
+  const requestIds = Array.from(
+    new Set((Array.isArray(requestIdsInput) ? requestIdsInput : []).map((value) => sanitizeText(value, 128)).filter(Boolean))
+  );
+  const guestToken = normalizeGuestToken(guestTokenInput);
+  const stats = new Map();
+
+  for (const requestId of requestIds) {
+    stats.set(requestId, emptyVoteStats());
+  }
+
+  if (!requestIds.length) {
+    return stats;
+  }
+
+  const grouped = await prisma.requestVote.groupBy({
+    by: ['requestId', 'value'],
+    where: {
+      requestId: {
+        in: requestIds
+      }
+    },
+    _count: {
+      _all: true
+    }
+  });
+
+  for (const row of grouped) {
+    const current = stats.get(row.requestId) || emptyVoteStats();
+    const count = Number(row._count?._all || 0);
+    if (Number(row.value) > 0) {
+      current.upvotes = count;
+    } else if (Number(row.value) < 0) {
+      current.downvotes = count;
+    }
+    current.score = current.upvotes - current.downvotes;
+    stats.set(row.requestId, current);
+  }
+
+  if (guestToken) {
+    const ownVotes = await prisma.requestVote.findMany({
+      where: {
+        requestId: {
+          in: requestIds
+        },
+        guestToken
+      },
+      select: {
+        requestId: true,
+        value: true
+      }
+    });
+
+    for (const row of ownVotes) {
+      const current = stats.get(row.requestId) || emptyVoteStats();
+      current.myVote = Number(row.value) > 0 ? 1 : -1;
+      stats.set(row.requestId, current);
+    }
+  }
+
+  return stats;
+}
+
+function readVoteStats(voteStats, requestId) {
+  if (!voteStats || typeof voteStats.get !== 'function') {
+    return emptyVoteStats();
+  }
+  return voteStats.get(requestId) || emptyVoteStats();
+}
+
+async function toRequestViewWithVotes(request, partyCode, guestTokenInput = '') {
+  const voteStats = await getVoteStatsForRequestIds([request.id], guestTokenInput);
+  return toRequestView(request, partyCode, readVoteStats(voteStats, request.id));
 }
 
 function validateDjCredentials(party, sessionIdInput, tokenInput, options = {}) {
@@ -299,6 +418,38 @@ export async function getPartyState(codeInput) {
   };
 }
 
+export async function getPublicRequestsForParty(codeInput, guestTokenInput = '') {
+  const code = normalizePartyCode(codeInput);
+  if (!code) return { error: 'invalid_party_code' };
+
+  const party = await prisma.party.findUnique({
+    where: { code },
+    include: { activeDjSession: true }
+  });
+
+  if (!party) return { error: 'party_not_found' };
+
+  const djActive = Boolean(party.activeDjSession && party.activeDjSession.active && isSessionFresh(party.activeDjSession));
+
+  const requests = await prisma.songRequest.findMany({
+    where: { partyId: party.id },
+    orderBy: [{ createdAt: 'desc' }, { seqNo: 'desc' }],
+    take: 40
+  });
+
+  const voteStats = await getVoteStatsForRequestIds(
+    requests.map((entry) => entry.id),
+    guestTokenInput
+  );
+
+  return {
+    partyCode: party.code,
+    partyName: party.name || '',
+    djActive,
+    requests: requests.map((entry) => toGuestRequestView(entry, readVoteStats(voteStats, entry.id)))
+  };
+}
+
 export async function addSongRequest(codeInput, payloadInput, idempotencyKeyInput) {
   const code = normalizePartyCode(codeInput);
   if (!code) return { error: 'invalid_party_code' };
@@ -351,7 +502,7 @@ export async function addSongRequest(codeInput, payloadInput, idempotencyKeyInpu
 
             if (existing?.request) {
               return {
-                request: toRequestView(existing.request, party.code),
+                request: toRequestView(existing.request, party.code, emptyVoteStats()),
                 duplicate: true
               };
             }
@@ -385,7 +536,7 @@ export async function addSongRequest(codeInput, payloadInput, idempotencyKeyInpu
           }
 
           return {
-            request: toRequestView(request, party.code),
+            request: toRequestView(request, party.code, emptyVoteStats()),
             duplicate: false
           };
         },
@@ -423,8 +574,10 @@ export async function getRequestsForDj(codeInput, sessionIdInput, tokenInput) {
     orderBy: { seqNo: 'asc' }
   });
 
+  const voteStats = await getVoteStatsForRequestIds(requests.map((entry) => entry.id));
+
   return {
-    requests: requests.map((entry) => toRequestView(entry, party.code))
+    requests: requests.map((entry) => toRequestView(entry, party.code, readVoteStats(voteStats, entry.id)))
   };
 }
 
@@ -471,7 +624,7 @@ export async function markRequestPlayed(codeInput, requestIdInput, sessionIdInpu
   if (!existing) return { error: 'request_not_found' };
 
   if (existing.status === 'played') {
-    return { request: toRequestView(existing, party.code), unchanged: true };
+    return { request: await toRequestViewWithVotes(existing, party.code), unchanged: true };
   }
 
   const updated = await prisma.songRequest.update({
@@ -483,7 +636,42 @@ export async function markRequestPlayed(codeInput, requestIdInput, sessionIdInpu
     }
   });
 
-  return { request: toRequestView(updated, party.code), unchanged: false };
+  return { request: await toRequestViewWithVotes(updated, party.code), unchanged: false };
+}
+
+export async function markRequestApproved(codeInput, requestIdInput, sessionIdInput, tokenInput) {
+  const code = normalizePartyCode(codeInput);
+  const requestId = normalizeRequestId(requestIdInput);
+  if (!code) return { error: 'invalid_party_code' };
+  if (!requestId) return { error: 'invalid_request_id' };
+
+  const party = await prisma.party.findUnique({
+    where: { code },
+    include: { activeDjSession: true }
+  });
+
+  const auth = validateDjCredentials(party, sessionIdInput, tokenInput);
+  if (auth.error) return auth;
+
+  const existing = await prisma.songRequest.findFirst({
+    where: { id: requestId, partyId: party.id }
+  });
+  if (!existing) return { error: 'request_not_found' };
+
+  if (existing.status === 'approved') {
+    return { request: await toRequestViewWithVotes(existing, party.code), unchanged: true };
+  }
+
+  const updated = await prisma.songRequest.update({
+    where: { id: existing.id },
+    data: {
+      status: 'approved',
+      playedAt: new Date(),
+      playedBy: auth.session.deviceName
+    }
+  });
+
+  return { request: await toRequestViewWithVotes(updated, party.code), unchanged: false };
 }
 
 export async function markRequestQueued(codeInput, requestIdInput, sessionIdInput, tokenInput) {
@@ -506,7 +694,7 @@ export async function markRequestQueued(codeInput, requestIdInput, sessionIdInpu
   if (!existing) return { error: 'request_not_found' };
 
   if (existing.status === 'queued') {
-    return { request: toRequestView(existing, party.code), unchanged: true };
+    return { request: await toRequestViewWithVotes(existing, party.code), unchanged: true };
   }
 
   const updated = await prisma.songRequest.update({
@@ -518,5 +706,110 @@ export async function markRequestQueued(codeInput, requestIdInput, sessionIdInpu
     }
   });
 
-  return { request: toRequestView(updated, party.code), unchanged: false };
+  return { request: await toRequestViewWithVotes(updated, party.code), unchanged: false };
+}
+
+export async function markRequestRejected(codeInput, requestIdInput, sessionIdInput, tokenInput) {
+  const code = normalizePartyCode(codeInput);
+  const requestId = normalizeRequestId(requestIdInput);
+  if (!code) return { error: 'invalid_party_code' };
+  if (!requestId) return { error: 'invalid_request_id' };
+
+  const party = await prisma.party.findUnique({
+    where: { code },
+    include: { activeDjSession: true }
+  });
+
+  const auth = validateDjCredentials(party, sessionIdInput, tokenInput);
+  if (auth.error) return auth;
+
+  const existing = await prisma.songRequest.findFirst({
+    where: { id: requestId, partyId: party.id }
+  });
+  if (!existing) return { error: 'request_not_found' };
+
+  if (existing.status === 'rejected') {
+    return { request: await toRequestViewWithVotes(existing, party.code), unchanged: true };
+  }
+
+  const updated = await prisma.songRequest.update({
+    where: { id: existing.id },
+    data: {
+      status: 'rejected',
+      playedAt: new Date(),
+      playedBy: auth.session.deviceName
+    }
+  });
+
+  return { request: await toRequestViewWithVotes(updated, party.code), unchanged: false };
+}
+
+export async function setRequestVote(codeInput, requestIdInput, guestTokenInput, voteValueInput) {
+  const code = normalizePartyCode(codeInput);
+  const requestId = normalizeRequestId(requestIdInput);
+  const guestToken = normalizeGuestToken(guestTokenInput);
+  const value = normalizeVoteValue(voteValueInput);
+
+  if (!code) return { error: 'invalid_party_code' };
+  if (!requestId) return { error: 'invalid_request_id' };
+  if (!guestToken) return { error: 'invalid_guest_token' };
+  if (value === null) return { error: 'invalid_vote_value' };
+
+  const result = await prisma.$transaction(async (tx) => {
+    const party = await tx.party.findUnique({
+      where: { code }
+    });
+
+    if (!party) return { error: 'party_not_found' };
+    if (isExpired(party)) return { error: 'party_expired' };
+
+    const request = await tx.songRequest.findFirst({
+      where: { id: requestId, partyId: party.id }
+    });
+    if (!request) return { error: 'request_not_found' };
+
+    const existing = await tx.requestVote.findUnique({
+      where: {
+        requestId_guestToken: {
+          requestId: request.id,
+          guestToken
+        }
+      }
+    });
+
+    if (value === 0) {
+      if (existing) {
+        await tx.requestVote.delete({
+          where: { id: existing.id }
+        });
+      }
+    } else if (existing) {
+      if (existing.value !== value) {
+        await tx.requestVote.update({
+          where: { id: existing.id },
+          data: { value }
+        });
+      }
+    } else {
+      await tx.requestVote.create({
+        data: {
+          partyId: party.id,
+          requestId: request.id,
+          guestToken,
+          value
+        }
+      });
+    }
+
+    return {
+      party,
+      request
+    };
+  });
+
+  if (result?.error) return result;
+
+  return {
+    request: await toRequestViewWithVotes(result.request, result.party.code, guestToken)
+  };
 }

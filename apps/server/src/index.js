@@ -13,12 +13,16 @@ import {
   addSongRequest,
   claimDjSession,
   createPartyForUser,
+  getPublicRequestsForParty,
   getPartyState,
   getRequestsForDj,
   heartbeatSession,
+  markRequestApproved,
   markRequestPlayed,
   markRequestQueued,
+  markRequestRejected,
   normalizePartyCode,
+  setRequestVote,
   validateDjSocketRegistration
 } from './services/partyService.js';
 import { getUserById, loginUser, registerUser } from './services/authService.js';
@@ -137,6 +141,10 @@ function mapPartyError(res, error) {
       return res.status(400).json({ error: 'Invalid song URL' });
     case 'invalid_request_id':
       return res.status(400).json({ error: 'Invalid request ID' });
+    case 'invalid_guest_token':
+      return res.status(400).json({ error: 'Invalid guest token' });
+    case 'invalid_vote_value':
+      return res.status(400).json({ error: 'Invalid vote value' });
     case 'request_not_found':
       return res.status(404).json({ error: 'Request not found' });
     case 'party_request_limit_reached':
@@ -463,6 +471,40 @@ app.post(
 );
 
 app.get(
+  '/api/parties/:code/feed',
+  asyncHandler(async (req, res) => {
+    const code = readCode(req, res);
+    if (!code) return;
+
+    const result = await getPublicRequestsForParty(code, req.query?.guestToken);
+    if (result.error) {
+      mapPartyError(res, result.error);
+      return;
+    }
+
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/parties/:code/requests/:id/vote',
+  asyncHandler(async (req, res) => {
+    const code = readCode(req, res);
+    if (!code) return;
+
+    const requestId = String(req.params.id || '').trim();
+    const result = await setRequestVote(code, requestId, req.body?.guestToken, req.body?.value);
+    if (result.error) {
+      mapPartyError(res, result.error);
+      return;
+    }
+
+    io.to(`party:${code}:dj`).emit('request:update', result.request);
+    res.json(result.request);
+  })
+);
+
+app.get(
   '/api/parties/:code/requests',
   asyncHandler(async (req, res) => {
     const code = readCode(req, res);
@@ -482,6 +524,27 @@ app.get(
 );
 
 app.post(
+  '/api/parties/:code/requests/:id/approved',
+  asyncHandler(async (req, res) => {
+    const code = readCode(req, res);
+    if (!code) return;
+
+    const requestId = String(req.params.id || '').trim();
+    const sessionId = String(req.headers['x-dj-session-id'] || '').trim();
+    const token = String(req.headers['x-dj-token'] || '').trim();
+
+    const result = await markRequestApproved(code, requestId, sessionId, token);
+    if (result.error) {
+      mapPartyError(res, result.error);
+      return;
+    }
+
+    io.to(`party:${code}:dj`).emit('request:update', result.request);
+    res.json(result.request);
+  })
+);
+
+app.post(
   '/api/parties/:code/requests/:id/played',
   asyncHandler(async (req, res) => {
     const code = readCode(req, res);
@@ -492,6 +555,27 @@ app.post(
     const token = String(req.headers['x-dj-token'] || '').trim();
 
     const result = await markRequestPlayed(code, requestId, sessionId, token);
+    if (result.error) {
+      mapPartyError(res, result.error);
+      return;
+    }
+
+    io.to(`party:${code}:dj`).emit('request:update', result.request);
+    res.json(result.request);
+  })
+);
+
+app.post(
+  '/api/parties/:code/requests/:id/rejected',
+  asyncHandler(async (req, res) => {
+    const code = readCode(req, res);
+    if (!code) return;
+
+    const requestId = String(req.params.id || '').trim();
+    const sessionId = String(req.headers['x-dj-session-id'] || '').trim();
+    const token = String(req.headers['x-dj-token'] || '').trim();
+
+    const result = await markRequestRejected(code, requestId, sessionId, token);
     if (result.error) {
       mapPartyError(res, result.error);
       return;

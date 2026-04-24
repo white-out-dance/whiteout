@@ -129,45 +129,6 @@ body::before {
   min-height: 320px;
 }
 
-.scene-poster,
-.hero-scene-card {
-  margin: 0;
-  position: absolute;
-  overflow: hidden;
-  border-radius: 26px;
-  border: 2px solid rgba(243, 239, 232, 0.1);
-  background: #0b0b0b;
-}
-
-.scene-poster img,
-.hero-scene-card img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.scene-poster {
-  right: 6%;
-  top: 0;
-  width: min(64%, 340px);
-  transform: rotate(3deg);
-}
-
-.scene-poster-secondary {
-  left: 0;
-  bottom: 6px;
-  width: min(60%, 300px);
-  transform: rotate(-6deg);
-}
-
-.hero-scene-card {
-  inset: 0 0 0 auto;
-  width: min(72%, 360px);
-  right: 4%;
-  transform: rotate(2deg);
-}
-
 .layout {
   max-width: 1240px;
   margin: 0 auto;
@@ -1046,5 +1007,150 @@ input:focus {
   .stage-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+}
+
+.booth-brand-scene {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+  border-radius: 28px;
+}
+
+.booth-brand-scene::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.1), transparent 20%),
+    radial-gradient(circle at 78% 28%, rgba(255, 255, 255, 0.12), transparent 20%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+}
+
+.booth-brand-scene::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  background-image:
+    radial-gradient(circle at 10% 14%, rgba(243, 239, 232, 0.9) 0 2px, transparent 2px),
+    radial-gradient(circle at 22% 8%, rgba(243, 239, 232, 0.8) 0 1px, transparent 1px),
+    radial-gradient(circle at 82% 12%, rgba(243, 239, 232, 0.8) 0 2px, transparent 2px),
+    radial-gradient(circle at 84% 78%, rgba(243, 239, 232, 0.8) 0 2px, transparent 2px),
+    radial-gradient(circle at 15% 82%, rgba(243, 239, 232, 0.7) 0 1.5px, transparent 1.5px);
+  opacity: 0.7;
+}
+
+.booth-brand-scene-hero {
+  min-height: 260px;
+}
+
+.booth-brand-card {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(243, 239, 232, 0.12);
+  background: rgba(7, 7, 7, 0.66);
+  box-shadow: var(--shadow);
+  z-index: 1;
+}
+
+.booth-brand-card-main {
+  inset: 6% 12% auto auto;
+  width: min(70%, 320px);
+  aspect-ratio: 1 / 1;
+  transform: rotate(4deg);
+}
+
+.booth-brand-card-text {
+  left: 0;
+  bottom: 20%;
+  width: min(54%, 250px);
+  min-height: 78px;
+  font-family: 'League Spartan', sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+  transform: rotate(-7deg);
+}
+
+.booth-brand-card-code {
+  right: 2%;
+  bottom: 4%;
+  width: min(54%, 260px);
+  min-height: 64px;
+  font-family: 'League Spartan', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.booth-brand-mark {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 16px 28px rgba(0, 0, 0, 0.34));
+}
+
+.booth-spray {
+  position: absolute;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 26% 38%, rgba(243, 239, 232, 0.9) 0 2px, transparent 2px),
+    radial-gradient(circle at 54% 22%, rgba(243, 239, 232, 0.8) 0 4px, transparent 4px),
+    radial-gradient(circle at 74% 54%, rgba(243, 239, 232, 0.74) 0 6px, transparent 6px),
+    radial-gradient(circle at 20% 74%, rgba(243, 239, 232, 0.76) 0 4px, transparent 4px);
+  opacity: 0.7;
+  z-index: 0;
+}
+
+.booth-spray-a {
+  left: 4%;
+  top: 8%;
+  width: 180px;
+  height: 160px;
+}
+
+.booth-spray-b {
+  right: 10%;
+  bottom: 8%;
+  width: 180px;
+  height: 140px;
+}
+
+.request-item.request-approved {
+  border-color: rgba(29, 145, 73, 0.34);
+  background:
+    radial-gradient(circle at top left, rgba(31, 143, 73, 0.14), transparent 44%),
+    rgba(255, 255, 255, 0.045);
+}
+
+.request-item.request-approved .request-title,
+.request-item.request-approved .request-artist {
+  color: #f6fff9;
+}
+
+@media (max-width: 760px) {
+  .booth-brand-scene,
+  .booth-brand-scene-hero {
+    min-height: 240px;
+  }
+
+  .booth-brand-card-main {
+    width: 56%;
+    inset: 8% 4% auto auto;
+  }
+
+  .booth-brand-card-text,
+  .booth-brand-card-code {
+    width: 60%;
+    min-height: 58px;
+    font-size: 0.8rem;
   }
 }

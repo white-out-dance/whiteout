@@ -280,12 +280,14 @@ function ensurePartyFolder(baseFolderPath, partyName, partyCode) {
 function summarizeQueueForLog(requests) {
   const list = Array.isArray(requests) ? requests : [];
   let queued = 0;
+  let approved = 0;
   let played = 0;
   let rejected = 0;
 
   for (const r of list) {
     const status = String(r?.status || 'queued').trim().toLowerCase();
     if (status === 'played') played += 1;
+    else if (status === 'approved') approved += 1;
     else if (status === 'rejected') rejected += 1;
     else queued += 1;
   }
@@ -293,6 +295,7 @@ function summarizeQueueForLog(requests) {
   return {
     total: list.length,
     queued,
+    approved,
     played,
     rejected
   };
@@ -610,7 +613,14 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
   }
 
   const statusRaw = String(request?.status || 'queued').trim().toLowerCase();
-  const status = statusRaw === 'played' ? 'played' : statusRaw === 'rejected' ? 'rejected' : 'queued';
+  const status =
+    statusRaw === 'played'
+      ? 'played'
+      : statusRaw === 'rejected'
+        ? 'rejected'
+        : statusRaw === 'approved'
+          ? 'approved'
+          : 'queued';
 
   let playedAt = null;
   const playedRaw = request?.playedAt ?? request?.played_at;
@@ -632,7 +642,11 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
     status,
     playedAt,
     playedBy: sanitizeText(request?.playedBy || request?.played_by, 80),
-    createdAt
+    createdAt,
+    upvotes: Math.max(0, Math.floor(Number(request?.upvotes ?? 0) || 0)),
+    downvotes: Math.max(0, Math.floor(Number(request?.downvotes ?? 0) || 0)),
+    score: Math.trunc(Number(request?.score ?? 0) || 0),
+    myVote: Math.trunc(Number(request?.myVote ?? request?.my_vote ?? 0) || 0)
   };
 }
 
@@ -648,7 +662,10 @@ function queueFingerprint(requests) {
         r.artist,
         r.service,
         r.songUrl || '',
-        r.playedAt || ''
+        r.playedAt || '',
+        r.upvotes || 0,
+        r.downvotes || 0,
+        r.score || 0
       ].join('|');
     })
     .join('\n');
@@ -707,10 +724,14 @@ function emitQueueUpsert(connection, requestInput, source = 'realtime', options 
   if (options.announce) {
     if (isNew && request.status === 'queued') {
       log('success', `Queued #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
+    } else if (!isNew && request.status === 'approved') {
+      log('info', `Approved #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
     } else if (!isNew && request.status === 'played') {
       log('info', `Marked played #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
     } else if (!isNew && request.status === 'queued') {
       log('info', `Returned to queue #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
+    } else if (!isNew && request.status === 'rejected') {
+      log('warning', `Rejected #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
     }
   }
 
@@ -739,12 +760,13 @@ async function syncQueue(connection) {
       !prev ||
       prev.total !== summary.total ||
       prev.queued !== summary.queued ||
+      prev.approved !== summary.approved ||
       prev.played !== summary.played ||
       prev.rejected !== summary.rejected;
 
     connection.lastQueueSummary = summary;
     if (shouldLog) {
-      log('info', `Queue synced (${summary.total} total, ${summary.queued} queued).`);
+      log('info', `Queue synced (${summary.total} total, ${summary.queued} queued, ${summary.approved} approved).`);
     }
     return;
   }
@@ -765,12 +787,13 @@ async function syncQueue(connection) {
     !prev ||
     prev.total !== summary.total ||
     prev.queued !== summary.queued ||
+    prev.approved !== summary.approved ||
     prev.played !== summary.played ||
     prev.rejected !== summary.rejected;
 
   connection.lastQueueSummary = summary;
   if (shouldLog) {
-    log('info', `Queue synced (${summary.total} total, ${summary.queued} queued).`);
+    log('info', `Queue synced (${summary.total} total, ${summary.queued} queued, ${summary.approved} approved).`);
   }
 }
 
@@ -1019,10 +1042,24 @@ async function updateRequestStatus(requestIdInput, nextStatus) {
     throw new Error('Request ID is missing.');
   }
 
-  const status = nextStatus === 'played' ? 'played' : nextStatus === 'rejected' ? 'rejected' : 'queued';
+  const status =
+    nextStatus === 'played'
+      ? 'played'
+      : nextStatus === 'rejected'
+        ? 'rejected'
+        : nextStatus === 'approved'
+          ? 'approved'
+          : 'queued';
 
   if (liveConnection.mode === 'supabase') {
-    const fn = status === 'played' ? 'dj_mark_played' : status === 'rejected' ? 'dj_mark_rejected' : 'dj_mark_queued';
+    const fn =
+      status === 'played'
+        ? 'dj_mark_played'
+        : status === 'rejected'
+          ? 'dj_mark_rejected'
+          : status === 'approved'
+            ? 'dj_mark_approved'
+            : 'dj_mark_queued';
     const { error } = await liveConnection.supabase.rpc(fn, {
       p_code: liveConnection.partyCode,
       p_request_id: requestId,
@@ -1033,10 +1070,6 @@ async function updateRequestStatus(requestIdInput, nextStatus) {
 
     await syncQueue(liveConnection);
     return { ok: true };
-  }
-
-  if (status === 'rejected') {
-    throw new Error('Reject is not supported in legacy API mode. Use Supabase mode.');
   }
 
   const response = await axios.post(
@@ -1117,6 +1150,7 @@ app.whenReady().then(() => {
   ipcMain.handle('dj:build-guest-qr', async (_event, payload) => buildGuestQr(payload));
   ipcMain.handle('dj:connect', async (_event, payload) => connectDj(payload));
   ipcMain.handle('dj:disconnect', async () => disconnectDj('Disconnected by user'));
+  ipcMain.handle('dj:mark-approved', async (_event, payload) => updateRequestStatus(payload?.requestId, 'approved'));
   ipcMain.handle('dj:mark-played', async (_event, payload) => updateRequestStatus(payload?.requestId, 'played'));
   ipcMain.handle('dj:mark-queued', async (_event, payload) => updateRequestStatus(payload?.requestId, 'queued'));
   ipcMain.handle('dj:mark-rejected', async (_event, payload) => updateRequestStatus(payload?.requestId, 'rejected'));
